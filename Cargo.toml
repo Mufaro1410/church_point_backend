@@ -1,0 +1,32 @@
+[package]
+name = "churchpoint_backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "request-id", "limit", "compression-gzip"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# "tls-rustls" is REQUIRED: Supabase only accepts SSL connections.
+sqlx = { version = "0.8", features = [
+    "runtime-tokio", "tls-rustls", "postgres", "derive", "macros", "json",
+    "uuid", "chrono", "rust_decimal", "migrate"
+] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+dotenvy = "0.15"
+jsonwebtoken = "9"
+thiserror = "2"
+# QR codes (same payload/size as the React qrUtils.ts)
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+rqrr = { version = "0.9", default-features = false }
+tower = { version = "0.5", features = ["util"] }
