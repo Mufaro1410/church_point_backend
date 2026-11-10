@@ -126,3 +126,15 @@ pub async fn names_by_ids(
     .fetch_all(pool)
     .await
 }
+
+/// "First Last" for a member (used to stamp the testimony `author` column server-side).
+pub async fn full_name(pool: &PgPool, id: Uuid) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT NULLIF(btrim(concat_ws(' ', first_name, last_name)), '')
+         FROM member_profiles WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map(Option::flatten)
+}

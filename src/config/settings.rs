@@ -7,6 +7,8 @@ pub struct Settings {
     pub database_url: String,
     pub db_max_connections: u32,
     pub supabase_jwt_secret: String,
+    /// Optional. When set, sermon `audio_url`s must point into this project's storage.
+    pub supabase_url: Option<String>,
     pub cors_origins: Vec<String>,
 }
 
@@ -19,6 +21,7 @@ impl Settings {
             database_url: required("DATABASE_URL")?,
             db_max_connections: parse_or("DB_MAX_CONNECTIONS", 10)?,
             supabase_jwt_secret: required("SUPABASE_JWT_SECRET")?,
+            supabase_url: env::var("SUPABASE_URL").ok().filter(|s| !s.trim().is_empty()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_default()
                 .split(',')

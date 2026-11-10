@@ -1,4 +1,8 @@
+pub mod announcement;
 pub mod auth;
 pub mod event;
 pub mod foc;
 pub mod member;
+pub mod prayer;
+pub mod sermon;
+pub mod testimony;

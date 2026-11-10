@@ -10,10 +10,14 @@ use crate::{
     state::SharedState,
 };
 
+pub mod announcements;
 pub mod auth;
 pub mod events;
 pub mod foc;
 pub mod members;
+pub mod prayers;
+pub mod sermons;
+pub mod testimonies;
 
 fn cors_layer(origins: &[String]) -> CorsLayer {
     use axum::http::{HeaderValue, Method, header};
@@ -31,6 +35,10 @@ pub fn build(state: SharedState) -> Router {
         .merge(events::routes())
         .merge(foc::routes())
         .merge(members::routes())
+        .merge(sermons::routes())
+        .merge(prayers::routes())
+        .merge(testimonies::routes())
+        .merge(announcements::routes())
         .route_layer(from_fn_with_state(state.clone(), authenticate));
 
     Router::new()

@@ -1,3 +1,9 @@
+pub mod announcement;
 pub mod auth;
+pub mod common;
 pub mod event;
 pub mod member;
+pub mod prayer;
+pub mod scope;
+pub mod sermon;
+pub mod testimony;

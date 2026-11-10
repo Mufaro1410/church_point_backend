@@ -23,3 +23,50 @@ where
             .map_err(|rej| AppError::Validation(rej.body_text()))
     }
 }
+
+use axum::{
+    extract::{
+        FromRequestParts, Path, Query,
+        rejection::{PathRejection, QueryRejection},
+    },
+    http::request::Parts,
+};
+use serde::de::DeserializeOwned;
+
+/// `axum::extract::Query` with our JSON error envelope.
+pub struct ApiQuery<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiQuery<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+    Query<T>: FromRequestParts<S, Rejection = QueryRejection>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        Query::<T>::from_request_parts(parts, state)
+            .await
+            .map(|Query(v)| ApiQuery(v))
+            .map_err(|rej| AppError::Validation(rej.body_text()))
+    }
+}
+
+/// `axum::extract::Path` with our JSON error envelope (e.g. a malformed UUID).
+pub struct ApiPath<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiPath<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + Send,
+    Path<T>: FromRequestParts<S, Rejection = PathRejection>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        Path::<T>::from_request_parts(parts, state)
+            .await
+            .map(|Path(v)| ApiPath(v))
+            .map_err(|rej| AppError::Validation(rej.body_text()))
+    }
+}

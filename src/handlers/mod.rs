@@ -1,11 +1,15 @@
 use serde::Serialize;
 
+pub mod announcement;
 pub mod auth;
 pub mod event;
 pub mod extract;
 pub mod foc;
 pub mod health;
 pub mod member;
+pub mod prayer;
+pub mod sermon;
+pub mod testimony;
 
 /// Standard success envelope: { "success": true, "data": ... }
 #[derive(Serialize)]

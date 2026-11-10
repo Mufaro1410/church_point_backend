@@ -8,13 +8,14 @@ use crate::{
     errors::{AppError, AppResult, AuthError, EventError, MemberError},
     middleware::authentication::AuthUser,
     models::event::{
-        AttendanceSummary, Attendee, CreateEventRequest, EventScope, EventsQuery, ManualStats,
+        AttendanceSummary, Attendee, CreateEventRequest, EventsQuery, ManualStats,
         MarkAttendanceRequest, MemberName, NewEvent, RsvpCategory, RsvpStats, UpdateEventRequest,
     },
     repositories::{event_repository, member_repository},
     state::SharedState,
     utils::{qr, validation::non_empty},
 };
+use super::scope;
 
 pub async fn list(state: &SharedState, auth: &AuthUser, q: EventsQuery) -> AppResult<Vec<Value>> {
     let foc_id = auth.require_foc()?;
@@ -48,8 +49,6 @@ fn check_stats(stats: &ManualStats) -> AppResult<()> {
 
 pub async fn create(state: &SharedState, auth: &AuthUser, req: CreateEventRequest) -> AppResult<Value> {
     let foc_id = auth.require_foc()?;
-    let church_id = auth.church_id.ok_or(AuthError::NoFoc)?;
-
     let title = non_empty("title", &req.title)?;
     let location = non_empty("location", &req.location)?;
     let start_time = non_empty("start_time", &req.start_time)?;
@@ -61,20 +60,8 @@ pub async fn create(state: &SharedState, auth: &AuthUser, req: CreateEventReques
         check_sermon(state, sermon_id, foc_id).await?;
     }
 
-    // The server, not the client, decides who owns the event. These rules mirror the
-    // database's `events_scope_check` constraint, so we fail with a clear message first.
-    let (province_id, owner_foc) = match req.scope {
-        EventScope::Church => (None, None),
-        EventScope::Province => (
-            Some(auth.province_id.ok_or_else(|| {
-                AppError::Validation(
-                    "Your FOC has no assigned province, so you cannot create a province event.".into(),
-                )
-            })?),
-            None,
-        ),
-        EventScope::Foc => (auth.province_id, Some(foc_id)),
-    };
+    // The server, not the client, decides who owns the event.
+    let owner = scope::ownership(req.scope, auth)?;
 
     // QR is generated here, in the same INSERT (one round trip, no half-created events).
     let id = Uuid::new_v4();
@@ -89,10 +76,11 @@ pub async fn create(state: &SharedState, auth: &AuthUser, req: CreateEventReques
         end_time,
         location,
         description: req.description,
-        scope: req.scope.as_str(),
-        church_id,
-        province_id,
-        foc_id: owner_foc,
+        scope: owner.scope,
+        church_id: owner.church_id,
+        province_id: owner.province_id,
+        foc_id: owner.foc_id,
+        created_by_foc_id: owner.created_by_foc_id,
         is_recurring: req.is_recurring,
         sermon_id: req.sermon_id,
         manual_stats: serde_json::to_value(&manual_stats).map_err(|e| AppError::Internal(e.to_string()))?,
@@ -118,9 +106,19 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut req: Upd
         check_sermon(state, sermon_id, foc_id).await?;
     }
 
-    event_repository::update(&state.db, id, auth, &req)
-        .await?
-        .ok_or_else(|| EventError::NotFound.into())
+    match event_repository::update(&state.db, id, auth, &req).await? {
+        Some(event) => Ok(event),
+        None => Err(not_manageable(state, auth, id).await?),
+    }
+}
+
+/// A change matched no row. Tell the caller WHY: the event is visible to them but owned by
+/// another FOC (403), or it does not exist / is not theirs to even see (404).
+async fn not_manageable(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<AppError> {
+    Ok(match event_repository::find_visible(&state.db, id, auth).await? {
+        Some(_) => AuthError::Forbidden.into(),
+        None => EventError::NotFound.into(),
+    })
 }
 
 /// Replaces React `regenerateEventQRCode`.
@@ -128,15 +126,16 @@ pub async fn regenerate_qr(state: &SharedState, auth: &AuthUser, id: Uuid) -> Ap
     auth.require_foc()?;
     let now = Utc::now();
     let qr_code = qr::event_qr_data_url(id, now)?;
-    event_repository::set_qr(&state.db, id, auth, &qr_code, now)
-        .await?
-        .ok_or_else(|| EventError::NotFound.into())
+    match event_repository::set_qr(&state.db, id, auth, &qr_code, now).await? {
+        Some(event) => Ok(event),
+        None => Err(not_manageable(state, auth, id).await?),
+    }
 }
 
 pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<()> {
     auth.require_foc()?;
     match event_repository::delete(&state.db, id, auth).await {
-        Ok(0) => Err(EventError::NotFound.into()),
+        Ok(0) => Err(not_manageable(state, auth, id).await?),
         Ok(_) => Ok(()),
         // 23503 = foreign key violation (income/serving rows still point at this event)
         Err(e) if e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23503") => {

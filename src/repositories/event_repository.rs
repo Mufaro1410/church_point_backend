@@ -3,6 +3,7 @@ use serde_json::Value;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
+use super::scope_sql::push_manageable;
 use crate::{
     middleware::authentication::AuthUser,
     models::event::{NewEvent, UpdateEventRequest},
@@ -53,10 +54,10 @@ pub async fn insert(pool: &PgPool, e: &NewEvent) -> Result<Value, sqlx::Error> {
     sqlx::query_scalar(
         r#"INSERT INTO events
              (id, title, date, start_time, end_time, location, description, scope,
-              church_id, province_id, foc_id, "isRecurring", sermon_id, manual_stats,
-              qr_code, qr_generated_at)
+              church_id, province_id, foc_id, created_by_foc_id, "isRecurring", sermon_id,
+              manual_stats, qr_code, qr_generated_at)
            VALUES ($1, $2, $3, $4::timetz, $5::timetz, $6, $7, $8,
-                   $9, $10, $11, $12, $13, $14, $15, $16)
+                   $9, $10, $11, $12, $13, $14, $15, $16, $17)
            RETURNING to_jsonb(events)"#,
     )
     .bind(e.id)
@@ -70,6 +71,7 @@ pub async fn insert(pool: &PgPool, e: &NewEvent) -> Result<Value, sqlx::Error> {
     .bind(e.church_id)
     .bind(e.province_id)
     .bind(e.foc_id)
+    .bind(e.created_by_foc_id)
     .bind(&e.is_recurring)
     .bind(e.sermon_id)
     .bind(&e.manual_stats)
@@ -119,11 +121,9 @@ pub async fn update(
             .push_bind(serde_json::to_value(v).unwrap_or(Value::Null));
     }
 
-    qb.push(" WHERE events.id = ").push_bind(id);
-    qb.push(" AND ((events.scope = 'church' AND events.church_id = ").push_bind(auth.church_id);
-    qb.push(") OR (events.scope = 'province' AND events.province_id = ").push_bind(auth.province_id);
-    qb.push(") OR (events.scope = 'foc' AND events.foc_id = ").push_bind(auth.foc_id);
-    qb.push(")) RETURNING to_jsonb(events)");
+    qb.push(" WHERE events.id = ").push_bind(id).push(" AND ");
+    push_manageable(&mut qb, "events", auth);
+    qb.push(" RETURNING to_jsonb(events)");
 
     qb.build_query_scalar::<Value>().fetch_optional(pool).await
 }
@@ -135,20 +135,12 @@ pub async fn set_qr(
     qr_code: &str,
     at: DateTime<Utc>,
 ) -> Result<Option<Value>, sqlx::Error> {
-    sqlx::query_scalar(&format!(
-        "UPDATE events SET qr_code = $2, qr_generated_at = $3, updated_at = now()
-         WHERE events.id = $1 AND {}
-         RETURNING to_jsonb(events)",
-        visible(4, 5, 6)
-    ))
-    .bind(id)
-    .bind(qr_code)
-    .bind(at)
-    .bind(auth.church_id)
-    .bind(auth.province_id)
-    .bind(auth.foc_id)
-    .fetch_optional(pool)
-    .await
+    let mut qb = QueryBuilder::<Postgres>::new("UPDATE events SET qr_code = ");
+    qb.push_bind(qr_code).push(", qr_generated_at = ").push_bind(at);
+    qb.push(", updated_at = now() WHERE events.id = ").push_bind(id).push(" AND ");
+    push_manageable(&mut qb, "events", auth);
+    qb.push(" RETURNING to_jsonb(events)");
+    qb.build_query_scalar::<Value>().fetch_optional(pool).await
 }
 
 /// Integrity rule: an event may only be linked to a sermon of the caller's own FOC.
@@ -161,17 +153,10 @@ pub async fn sermon_in_foc(pool: &PgPool, sermon_id: Uuid, foc_id: Uuid) -> Resu
 }
 
 pub async fn delete(pool: &PgPool, id: Uuid, auth: &AuthUser) -> Result<u64, sqlx::Error> {
-    let res = sqlx::query(&format!(
-        "DELETE FROM events WHERE events.id = $1 AND {}",
-        visible(2, 3, 4)
-    ))
-    .bind(id)
-    .bind(auth.church_id)
-    .bind(auth.province_id)
-    .bind(auth.foc_id)
-    .execute(pool)
-    .await?;
-    Ok(res.rows_affected())
+    let mut qb = QueryBuilder::<Postgres>::new("DELETE FROM events WHERE events.id = ");
+    qb.push_bind(id).push(" AND ");
+    push_manageable(&mut qb, "events", auth);
+    Ok(qb.build().execute(pool).await?.rows_affected())
 }
 
 /// Atomic check-in: sets attendance[member_id] = now(), keeping the original time if the

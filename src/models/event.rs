@@ -1,5 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+
+use super::{common::double_option, scope::Scope};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -54,24 +56,6 @@ pub struct AttendanceSummary {
 }
 
 // ── Strictly typed write requests (matches the real `events` table) ──
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum EventScope {
-    Church,
-    Province,
-    Foc,
-}
-
-impl EventScope {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Church => "church",
-            Self::Province => "province",
-            Self::Foc => "foc",
-        }
-    }
-}
 
 /// `manual_stats` jsonb column. Keys match what the React app already stores.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -139,15 +123,6 @@ impl ManualStatsPatch {
     }
 }
 
-/// Distinguishes "field absent" (leave alone) from "field is null" (clear it).
-fn double_option<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
-where
-    T: Deserialize<'de>,
-    D: Deserializer<'de>,
-{
-    Option::<T>::deserialize(d).map(Some)
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreateEventRequest {
     pub title: String,
@@ -156,7 +131,7 @@ pub struct CreateEventRequest {
     pub start_time: String,
     pub end_time: String,
     pub location: String,
-    pub scope: EventScope,
+    pub scope: Scope,
     pub description: Option<String>,
     #[serde(rename = "isRecurring")]
     pub is_recurring: Option<String>,
@@ -193,6 +168,7 @@ pub struct NewEvent {
     pub church_id: Uuid,
     pub province_id: Option<Uuid>,
     pub foc_id: Option<Uuid>,
+    pub created_by_foc_id: Uuid,
     pub is_recurring: Option<String>,
     pub sermon_id: Option<Uuid>,
     pub manual_stats: Value,

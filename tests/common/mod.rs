@@ -1,5 +1,7 @@
 #![allow(dead_code)] // each test file compiles this module separately
 
+pub mod db;
+
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -20,6 +22,7 @@ pub fn test_app() -> Router {
         database_url: String::new(),
         db_max_connections: 1,
         supabase_jwt_secret: "test-secret".into(),
+        supabase_url: None,
         cors_origins: vec![],
     };
     build_app(AppState::new(pool, settings))

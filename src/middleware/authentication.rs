@@ -27,6 +27,10 @@ pub struct AuthUser {
 }
 
 impl AuthUser {
+    pub fn is_admin(&self) -> bool {
+        self.role.as_deref() == Some("admin")
+    }
+
     /// Most data belongs to a FOC; fail closed if the user has none.
     pub fn require_foc(&self) -> Result<Uuid, AuthError> {
         self.foc_id.ok_or(AuthError::NoFoc)

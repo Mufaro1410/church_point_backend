@@ -6,7 +6,8 @@ use axum::{
 use serde_json::json;
 
 use super::domain::{
-    auth::AuthError, event::EventError, foc::FocError, member::MemberError,
+    announcement::AnnouncementError, auth::AuthError, event::EventError, foc::FocError,
+    member::MemberError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
 };
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -23,6 +24,14 @@ pub enum AppError {
     Foc(#[from] FocError),
     #[error(transparent)]
     Event(#[from] EventError),
+    #[error(transparent)]
+    Sermon(#[from] SermonError),
+    #[error(transparent)]
+    Prayer(#[from] PrayerError),
+    #[error(transparent)]
+    Testimony(#[from] TestimonyError),
+    #[error(transparent)]
+    Announcement(#[from] AnnouncementError),
     #[error("{0}")]
     Validation(String),
     #[error("Database error")]
@@ -55,6 +64,10 @@ impl AppError {
             AppError::Member(e) => (e.status(), e.code(), None),
             AppError::Foc(e) => (e.status(), e.code(), None),
             AppError::Event(e) => (e.status(), e.code(), None),
+            AppError::Sermon(e) => (e.status(), e.code(), None),
+            AppError::Prayer(e) => (e.status(), e.code(), None),
+            AppError::Testimony(e) => (e.status(), e.code(), None),
+            AppError::Announcement(e) => (e.status(), e.code(), None),
             AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR", None),
             AppError::Database(e) => match client_db_error(e) {
                 Some((s, c, m)) => (s, c, Some(m)),

@@ -1,4 +1,9 @@
+pub mod announcement_repository;
 pub mod event_repository;
 pub mod foc_repository;
 pub mod member_repository;
+pub mod prayer_repository;
+pub mod scope_sql;
+pub mod sermon_repository;
+pub mod testimony_repository;
 pub mod user_repository;

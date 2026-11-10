@@ -1,10 +1,116 @@
 use crate::errors::AppError;
 
+fn err(msg: String) -> AppError {
+    AppError::Validation(msg)
+}
+
 /// Trims and requires a non-empty value.
 pub fn non_empty(field: &str, value: &str) -> Result<String, AppError> {
     let v = value.trim();
     if v.is_empty() {
-        return Err(AppError::Validation(format!("{field} is required.")));
+        return Err(err(format!("{field} is required.")));
     }
     Ok(v.to_string())
+}
+
+/// Trims, requires non-empty, and enforces a maximum length in characters.
+pub fn required_text(field: &str, value: &str, max: usize) -> Result<String, AppError> {
+    let v = non_empty(field, value)?;
+    if v.chars().count() > max {
+        return Err(err(format!("{field} must be at most {max} characters.")));
+    }
+    Ok(v)
+}
+
+/// Optional text: blank becomes None; too long is an error.
+pub fn optional_text(field: &str, value: Option<String>, max: usize) -> Result<Option<String>, AppError> {
+    match value.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        Some(s) if s.chars().count() > max => {
+            Err(err(format!("{field} must be at most {max} characters.")))
+        }
+        other => Ok(other),
+    }
+}
+
+/// Optional link: blank becomes None; otherwise it must be an absolute `https://` URL.
+/// If `must_start_with` is given (e.g. our own storage bucket), the URL must begin with it.
+pub fn optional_https_url(
+    field: &str,
+    value: Option<String>,
+    must_start_with: Option<&str>,
+) -> Result<Option<String>, AppError> {
+    let Some(s) = optional_text(field, value, 2048)? else {
+        return Ok(None);
+    };
+    let ok = url::Url::parse(&s).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some());
+    if !ok {
+        return Err(err(format!("{field} must be a valid https:// link.")));
+    }
+    if let Some(prefix) = must_start_with {
+        if !s.starts_with(prefix) {
+            return Err(err(format!("{field} must point to this app's own storage.")));
+        }
+    }
+    Ok(Some(s))
+}
+
+/// Trims tags, drops blanks and duplicates, and enforces size limits.
+pub fn clean_tags(tags: Vec<String>) -> Result<Vec<String>, AppError> {
+    let mut out: Vec<String> = Vec::new();
+    for t in tags {
+        let t = t.trim().to_string();
+        if t.is_empty() || out.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+            continue;
+        }
+        if t.chars().count() > 50 {
+            return Err(err("Each tag must be at most 50 characters.".into()));
+        }
+        out.push(t);
+    }
+    if out.len() > 20 {
+        return Err(err("A sermon can have at most 20 tags.".into()));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn required_text_trims_and_limits() {
+        assert_eq!(required_text("t", "  hi  ", 5).unwrap(), "hi");
+        assert!(required_text("t", "   ", 5).is_err());
+        assert!(required_text("t", "toolong", 5).is_err());
+    }
+
+    #[test]
+    fn limits_count_characters_not_bytes() {
+        // 5 characters, 10 bytes
+        assert!(required_text("t", "ééééé", 5).is_ok());
+    }
+
+    #[test]
+    fn links_must_be_https() {
+        assert!(optional_https_url("l", Some("https://youtube.com/x".into()), None).unwrap().is_some());
+        assert!(optional_https_url("l", Some("  ".into()), None).unwrap().is_none());
+        assert!(optional_https_url("l", Some("http://youtube.com/x".into()), None).is_err());
+        assert!(optional_https_url("l", Some("javascript:alert(1)".into()), None).is_err());
+        assert!(optional_https_url("l", Some("not a url".into()), None).is_err());
+    }
+
+    #[test]
+    fn storage_prefix_is_enforced() {
+        let prefix = "https://abc.supabase.co/storage/v1/object/public/churchpoint/";
+        let good = format!("{prefix}Sermons/1.opus");
+        assert!(optional_https_url("a", Some(good), Some(prefix)).is_ok());
+        assert!(optional_https_url("a", Some("https://evil.example/x.opus".into()), Some(prefix)).is_err());
+    }
+
+    #[test]
+    fn tags_are_cleaned() {
+        let t = clean_tags(vec![" Faith ".into(), "faith".into(), "".into(), "Hope".into()]).unwrap();
+        assert_eq!(t, vec!["Faith", "Hope"]);
+        assert!(clean_tags((0..21).map(|i| format!("t{i}")).collect()).is_err());
+    }
 }
