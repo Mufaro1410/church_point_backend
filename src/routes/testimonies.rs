@@ -14,7 +14,7 @@ pub fn routes() -> Router<SharedState> {
             "/testimonies/{id}",
             get(testimony::get).patch(testimony::update).delete(testimony::delete),
         )
-        .route_layer(from_fn(|req, next| require_roles(&["admin", "cell_leader"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
 
     // Moderation: admins only.
     let moderation = Router::new()

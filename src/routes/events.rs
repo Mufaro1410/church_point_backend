@@ -13,12 +13,12 @@ pub fn routes() -> Router<SharedState> {
         .route("/events/{id}", get(event::get))
         .route("/events/{id}/rsvp", get(event::rsvp_stats))
         .route("/events/{id}/attendance", get(event::attendance))
-        .route_layer(from_fn(|req, next| require_roles(&["admin", "cell_leader"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
 
     // Check-in: admins and cell leaders (they run the door / take the register).
     let check_in = Router::new()
         .route("/events/{id}/attendance", post(event::mark_attendance))
-        .route_layer(from_fn(|req, next| require_roles(&["admin", "cell_leader"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
 
     // Create / edit / delete: admins only.
     let writes = Router::new()

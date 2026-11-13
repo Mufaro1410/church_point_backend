@@ -1,7 +1,17 @@
-//! Postgres-backed test environment. Skipped unless TEST_DATABASE_URL is set, e.g.
-//!   TEST_DATABASE_URL=postgres://postgres:pw@localhost:5432/postgres cargo test --test db_tests
-//! Each test gets its own throwaway schema, so tests never touch real data and never collide.
-use std::str::FromStr;
+//! Postgres-backed test environment. Skipped unless TEST_DATABASE_URL is set (use a THROWAWAY server:
+//! `docker compose up -d testdb`, then
+//! `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres cargo test`).
+//! The connecting role must be a superuser: it creates databases and the Supabase-like roles.
+//!
+//! How it works: a template database is built once (cached by content hash):
+//!   baseline_infra.sql (superuser)  ->  baseline.sql (as the non-superuser `app_admin`, like Supabase's `postgres`)
+//!   ->  the `http` extension is removed (the manual dashboard step)  ->  migrations/  ->  seed data.
+//! Every test gets its own copy (CREATE DATABASE ... TEMPLATE), so tests are isolated and fast.
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use axum::{
     Router,
@@ -11,81 +21,213 @@ use axum::{
 use churchpoint_backend::{build_app, config::Settings, state::AppState};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
-use sqlx::{PgPool, postgres::{PgConnectOptions, PgPoolOptions}};
+use sqlx::{
+    PgPool,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
+use tokio::sync::OnceCell;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 pub const SUPABASE_URL: &str = "https://proj.supabase.co";
 const SECRET: &str = "test-secret";
+const INFRA: &str = include_str!("../fixtures/baseline_infra.sql");
+const BASELINE: &str = include_str!("../fixtures/baseline.sql");
+pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// On Supabase the `http` extension's functions are owned by another role, so migrations cannot revoke
+/// access to them: the extension has to be disabled by hand. This simulates that step.
+const DISABLE_HTTP_EXTENSION: &str = r#"
+do $$ declare f record; begin
+  for f in select p.oid::regprocedure as sig from pg_proc p
+           where p.pronamespace = 'public'::regnamespace
+             and p.proname in ('http','http_get','http_post','http_put','http_patch','http_delete','http_head',
+                               'http_header','http_list_curlopt','http_reset_curlopt','http_set_curlopt',
+                               'urlencode','bytea_to_text','text_to_bytea')
+  loop execute format('drop function %s', f.sig); end loop;
+end $$;"#;
+
+pub fn uid(n: u32) -> Uuid {
+    Uuid::from_u128(n as u128)
+}
 
 #[derive(Clone)]
 pub struct Actor {
     pub token: String,
+    pub user_id: Uuid,
     pub member_id: Uuid,
     pub foc_id: Uuid,
 }
 
-pub struct Env {
-    pub app: Router,
-    pub pool: PgPool,
-    admin_pool: PgPool,
-    schema: String,
-    /// Church A / FOC A1 (province P1): an admin and a cell leader
-    pub a1_admin: Actor,
-    pub a1_leader: Actor,
-    /// Church A / FOC A2 (same province): an admin
-    pub a2_admin: Actor,
-    /// Church B / FOC B1: an admin
-    pub b1_admin: Actor,
-}
+// ── seed layout ──
+// Church A (province P1): FOC A1 and FOC A2.   Church B: FOC B1 (no province).
+pub const CHURCH_A: u32 = 1;
+pub const CHURCH_B: u32 = 2;
+pub const PROVINCE_1: u32 = 3;
+pub const FOC_A1: u32 = 11;
+pub const FOC_A2: u32 = 12;
+pub const FOC_B1: u32 = 13;
+// members (member id = n, auth user id = n + 100)
+const A1_ADMIN: u32 = 21;
+const A1_ADMIN2: u32 = 22;
+const A1_MEMBER: u32 = 23;
+const A2_ADMIN: u32 = 24;
+const B1_ADMIN: u32 = 25;
 
 fn token_for(user_id: Uuid) -> String {
     let claims = json!({ "sub": user_id, "aud": "authenticated", "exp": chrono::Utc::now().timestamp() + 3600 });
     encode(&Header::default(), &claims, &EncodingKey::from_secret(SECRET.as_bytes())).unwrap()
 }
 
-pub async fn setup() -> Option<Env> {
-    let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
-        eprintln!("skipped: set TEST_DATABASE_URL to run the database tests");
-        return None;
-    };
-    let schema = format!("t_{}", Uuid::new_v4().simple());
+fn actor(member: u32, foc: u32) -> Actor {
+    let user_id = uid(member + 100);
+    Actor { token: token_for(user_id), user_id, member_id: uid(member), foc_id: uid(foc) }
+}
 
-    let admin_pool = PgPool::connect(&url).await.expect("connect TEST_DATABASE_URL");
-    sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin_pool).await.unwrap();
-
-    let opts = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
-    let pool = PgPoolOptions::new().max_connections(5).connect_with(opts).await.unwrap();
-
-    sqlx::raw_sql(include_str!("../fixtures/schema.sql")).execute(&pool).await.expect("fixture");
-    // The real migration, so the tests also prove the migration SQL is valid. It targets
-    // `public.*` in production; here the tables live in the throwaway schema, so drop the prefix.
-    let migration = include_str!("../../sql/001_content_migration.sql").replace("public.", "");
-    sqlx::raw_sql(&migration).execute(&pool).await.expect("migration");
-
-    let id = |n: u8| Uuid::from_u128(n as u128);
-    let (church_a, church_b, prov1) = (id(1), id(2), id(3));
-    let (foc_a1, foc_a2, foc_b1) = (id(11), id(12), id(13));
-    sqlx::query("INSERT INTO church(id,name) VALUES ($1,'A'),($2,'B')").bind(church_a).bind(church_b).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO province(id,church_id,name) VALUES ($1,$2,'P1')").bind(prov1).bind(church_a).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO foc_profile(id,church_id,province_id,name) VALUES ($1,$2,$3,'A1'),($4,$2,$3,'A2'),($5,$6,NULL,'B1')")
-        .bind(foc_a1).bind(church_a).bind(prov1).bind(foc_a2).bind(foc_b1).bind(church_b)
-        .execute(&pool).await.unwrap();
-
-    let mut actors = Vec::new();
-    for (n, foc, role, first, last) in [
-        (21u8, foc_a1, "admin", "Ada", "Admin"),
-        (22, foc_a1, "cell_leader", "Lee", "Leader"),
-        (23, foc_a2, "admin", "Abe", "Other"),
-        (24, foc_b1, "admin", "Bob", "Bee"),
-    ] {
-        let member = id(n);
-        let user = id(n + 100);
-        sqlx::query("INSERT INTO member_profiles(id,user_id,foc_id,email,role,first_name,last_name,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'approved')")
-            .bind(member).bind(user).bind(foc).bind(format!("{first}@x.com")).bind(role).bind(first).bind(last)
-            .execute(&pool).await.unwrap();
-        actors.push(Actor { token: token_for(user), member_id: member, foc_id: foc });
+async fn connect_to(url: &str, db: &str, as_app_admin: bool) -> PgPool {
+    let opts = PgConnectOptions::from_str(url).expect("TEST_DATABASE_URL").database(db);
+    let mut builder = PgPoolOptions::new().max_connections(5);
+    if as_app_admin {
+        builder = builder.after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE app_admin").execute(&mut *conn).await?;
+                Ok(())
+            })
+        });
     }
+    builder.connect_with(opts).await.expect("connect to test database")
+}
+
+async fn seed(pool: &PgPool) {
+    sqlx::query("INSERT INTO church(id, name) VALUES ($1,'Church A'),($2,'Church B')")
+        .bind(uid(CHURCH_A)).bind(uid(CHURCH_B)).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO province(id, church_id, name) VALUES ($1,$2,'P1')")
+        .bind(uid(PROVINCE_1)).bind(uid(CHURCH_A)).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO foc_profile(id, name, address, email, church_id, province_id) VALUES
+         ($1,'A1','addr','a1@x.com',$4,$5), ($2,'A2','addr','a2@x.com',$4,$5), ($3,'B1','addr','b1@x.com',$6,NULL)")
+        .bind(uid(FOC_A1)).bind(uid(FOC_A2)).bind(uid(FOC_B1))
+        .bind(uid(CHURCH_A)).bind(uid(PROVINCE_1)).bind(uid(CHURCH_B))
+        .execute(pool).await.unwrap();
+
+    for (n, foc, role, first, last) in [
+        (A1_ADMIN, FOC_A1, "admin", "Ada", "Admin"),
+        (A1_ADMIN2, FOC_A1, "admin", "Lee", "Leader"),
+        (A1_MEMBER, FOC_A1, "member", "Mary", "Member"),
+        (A2_ADMIN, FOC_A2, "admin", "Abe", "Other"),
+        (B1_ADMIN, FOC_B1, "admin", "Bob", "Bee"),
+    ] {
+        sqlx::query("INSERT INTO auth.users(id, email) VALUES ($1, $2)")
+            .bind(uid(n + 100)).bind(format!("{first}@x.com")).execute(pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO member_profiles(id, user_id, foc_id, email, role, first_name, last_name, gender, phone, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'F','0777000000','approved')")
+            .bind(uid(n)).bind(uid(n + 100)).bind(uid(foc)).bind(format!("{first}@x.com"))
+            .bind(role).bind(first).bind(last)
+            .execute(pool).await.unwrap();
+    }
+}
+
+struct Templates {
+    base: String,
+    migrated: String,
+}
+static TEMPLATES: OnceCell<Templates> = OnceCell::const_new();
+
+fn content_key() -> String {
+    let mut h = DefaultHasher::new();
+    INFRA.hash(&mut h);
+    BASELINE.hash(&mut h);
+    include_str!("db.rs").hash(&mut h); // any harness change (seed data included) rebuilds the template
+    for m in MIGRATOR.iter() {
+        m.version.hash(&mut h);
+        m.sql.hash(&mut h);
+    }
+    format!("{:x}", h.finish())
+}
+
+async fn build_one(url: &str, admin: &PgPool, name: &str, with_migrations: bool) {
+    let building = format!("{name}_building");
+    sqlx::query(&format!("DROP DATABASE IF EXISTS {building} WITH (FORCE)")).execute(admin).await.unwrap();
+    sqlx::query(&format!("CREATE DATABASE {building}")).execute(admin).await.unwrap();
+
+    let su = connect_to(url, &building, false).await;
+    sqlx::raw_sql(INFRA).execute(&su).await.expect("baseline_infra.sql");
+    let app = connect_to(url, &building, true).await;
+    sqlx::raw_sql(BASELINE).execute(&app).await.expect("baseline.sql");
+
+    if with_migrations {
+        sqlx::raw_sql(DISABLE_HTTP_EXTENSION).execute(&su).await.expect("disable http");
+        MIGRATOR.run(&app).await.expect("migrations");
+        seed(&su).await;
+    }
+    su.close().await;
+    app.close().await;
+    // build under a temporary name and rename, so a crashed build never leaves a half-made template
+    sqlx::query(&format!("ALTER DATABASE {building} RENAME TO {name}")).execute(admin).await.unwrap();
+}
+
+async fn templates(url: &str) -> &'static Templates {
+    let url = url.to_string();
+    TEMPLATES
+        .get_or_init(|| async move {
+            let key = content_key();
+            let (base, migrated) = (format!("cp_tpl_base_{key}"), format!("cp_tpl_mig_{key}"));
+            let admin = PgPoolOptions::new().max_connections(1).connect(&url).await.expect("connect TEST_DATABASE_URL");
+            sqlx::query("SELECT pg_advisory_lock(727272)").execute(&admin).await.unwrap();
+            for (name, with_migrations) in [(&base, false), (&migrated, true)] {
+                let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)")
+                    .bind(name).fetch_one(&admin).await.unwrap();
+                if !exists {
+                    build_one(&url, &admin, name, with_migrations).await;
+                }
+            }
+            sqlx::query("SELECT pg_advisory_unlock(727272)").execute(&admin).await.unwrap();
+            Templates { base, migrated }
+        })
+        .await
+}
+
+/// Creates a private copy of a template. Serialised, because Postgres dislikes concurrent copies of one template.
+async fn copy_template(url: &str, template: &str) -> (PgPool, String) {
+    let admin = PgPoolOptions::new().max_connections(1).connect(url).await.unwrap();
+    let name = format!("t_{}", Uuid::new_v4().simple());
+    sqlx::query("SELECT pg_advisory_lock(727273)").execute(&admin).await.unwrap();
+    sqlx::query(&format!("CREATE DATABASE {name} TEMPLATE {template}")).execute(&admin).await.unwrap();
+    sqlx::query("SELECT pg_advisory_unlock(727273)").execute(&admin).await.unwrap();
+    (admin, name)
+}
+
+fn test_url() -> Option<String> {
+    match std::env::var("TEST_DATABASE_URL") {
+        Ok(u) => Some(u),
+        Err(_) => {
+            eprintln!("skipped: set TEST_DATABASE_URL to run the database tests");
+            None
+        }
+    }
+}
+
+// ───────────────────────── the full application on a seeded, migrated database ─────────────────────────
+
+pub struct Env {
+    pub app: Router,
+    /// Superuser connection (the same power the Axum server has: it bypasses Row Level Security).
+    pub pool: PgPool,
+    admin: PgPool,
+    name: String,
+    pub a1_admin: Actor,
+    pub a1_admin2: Actor,
+    pub a1_member: Actor,
+    pub a2_admin: Actor,
+    pub b1_admin: Actor,
+}
+
+pub async fn setup() -> Option<Env> {
+    let url = test_url()?;
+    let t = templates(&url).await;
+    let (admin, name) = copy_template(&url, &t.migrated).await;
+    let pool = connect_to(&url, &name, false).await;
 
     let settings = Settings {
         host: "127.0.0.1".into(),
@@ -97,11 +239,13 @@ pub async fn setup() -> Option<Env> {
         cors_origins: vec![],
     };
     let app = build_app(AppState::new(pool.clone(), settings));
-    let mut it = actors.into_iter();
     Some(Env {
-        app, pool, admin_pool, schema,
-        a1_admin: it.next().unwrap(), a1_leader: it.next().unwrap(),
-        a2_admin: it.next().unwrap(), b1_admin: it.next().unwrap(),
+        app, pool, admin, name,
+        a1_admin: actor(A1_ADMIN, FOC_A1),
+        a1_admin2: actor(A1_ADMIN2, FOC_A1),
+        a1_member: actor(A1_MEMBER, FOC_A1),
+        a2_admin: actor(A2_ADMIN, FOC_A2),
+        b1_admin: actor(B1_ADMIN, FOC_B1),
     })
 }
 
@@ -110,7 +254,10 @@ impl Env {
         let mut req = Request::builder().method(method).uri(format!("/api/v1{uri}"))
             .header(header::AUTHORIZATION, format!("Bearer {}", who.token));
         let body = match body {
-            Some(b) => { req = req.header(header::CONTENT_TYPE, "application/json"); Body::from(b.to_string()) }
+            Some(b) => {
+                req = req.header(header::CONTENT_TYPE, "application/json");
+                Body::from(b.to_string())
+            }
             None => Body::empty(),
         };
         let res = self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
@@ -119,9 +266,67 @@ impl Env {
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
     }
 
+    /// Runs SQL AS a Supabase API role (what a browser/mobile client with the anon key or a login can do),
+    /// with `auth.uid()` set to `sub`. Always rolled back. Returns rows affected, or the database's error.
+    pub async fn try_as(&self, role: &str, sub: Option<Uuid>, sql: &str) -> Result<u64, String> {
+        let mut tx = self.pool.begin().await.unwrap();
+        sqlx::query(&format!("SET LOCAL ROLE {role}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("SELECT set_config('request.jwt.claim.sub', $1, true)")
+            .bind(sub.map(|u| u.to_string()).unwrap_or_default()).execute(&mut *tx).await.unwrap();
+        sqlx::query(sql).execute(&mut *tx).await.map(|r| r.rows_affected()).map_err(|e| e.to_string())
+    }
+
+    /// `select count(*) from public.<table>` as an API role.
+    pub async fn count_as(&self, role: &str, sub: Option<Uuid>, table: &str) -> i64 {
+        let mut tx = self.pool.begin().await.unwrap();
+        sqlx::query(&format!("SET LOCAL ROLE {role}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("SELECT set_config('request.jwt.claim.sub', $1, true)")
+            .bind(sub.map(|u| u.to_string()).unwrap_or_default()).execute(&mut *tx).await.unwrap();
+        sqlx::query_scalar(&format!("SELECT count(*) FROM public.{table}")).fetch_one(&mut *tx).await.unwrap()
+    }
+
+    /// Runs a query that returns one jsonb value, as an API role.
+    pub async fn json_as(&self, role: &str, sub: Option<Uuid>, sql: &str) -> Result<Value, String> {
+        let mut tx = self.pool.begin().await.unwrap();
+        sqlx::query(&format!("SET LOCAL ROLE {role}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("SELECT set_config('request.jwt.claim.sub', $1, true)")
+            .bind(sub.map(|u| u.to_string()).unwrap_or_default()).execute(&mut *tx).await.unwrap();
+        sqlx::query_scalar(sql).fetch_one(&mut *tx).await.map_err(|e| e.to_string())
+    }
+
     pub async fn cleanup(self) {
         self.pool.close().await;
-        let _ = sqlx::query(&format!("DROP SCHEMA {} CASCADE", self.schema)).execute(&self.admin_pool).await;
+        let _ = sqlx::query(&format!("DROP DATABASE {} WITH (FORCE)", self.name)).execute(&self.admin).await;
+    }
+}
+
+// ───────────────────────── a bare replica: baseline only, no migrations, no seed ─────────────────────────
+
+pub struct RawDb {
+    pub su: PgPool,
+    /// Connects as `app_admin` (non-superuser, like Supabase's `postgres`): what `sqlx migrate run` uses.
+    pub app: PgPool,
+    admin: PgPool,
+    name: String,
+}
+
+pub async fn raw_baseline() -> Option<RawDb> {
+    let url = test_url()?;
+    let t = templates(&url).await;
+    let (admin, name) = copy_template(&url, &t.base).await;
+    Some(RawDb {
+        su: connect_to(&url, &name, false).await,
+        app: connect_to(&url, &name, true).await,
+        admin,
+        name,
+    })
+}
+
+impl RawDb {
+    pub async fn cleanup(self) {
+        self.su.close().await;
+        self.app.close().await;
+        let _ = sqlx::query(&format!("DROP DATABASE {} WITH (FORCE)", self.name)).execute(&self.admin).await;
     }
 }
 

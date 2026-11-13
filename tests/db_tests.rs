@@ -14,7 +14,7 @@ fn find<'a>(list: &'a Value, title: &str) -> &'a Value {
 #[tokio::test]
 async fn prayers_hide_anonymous_authors() {
     let Some(env) = setup().await else { return };
-    let leader = &env.a1_leader;
+    let leader = &env.a1_admin2; // an admin acting as the testimony's author
 
     let (s, mine) = env.call(leader, "POST", "/prayers", Some(json!(
         {"title":"Quiet one","content":"private","is_anonymous":true}))).await;
@@ -50,13 +50,13 @@ async fn prayers_hide_anonymous_authors() {
 #[tokio::test]
 async fn prayer_edit_and_delete_rules() {
     let Some(env) = setup().await else { return };
-    let (_, created) = env.call(&env.a1_leader, "POST", "/prayers", Some(json!({"title":"T","content":"C"}))).await;
+    let (_, created) = env.call(&env.a1_admin2, "POST", "/prayers", Some(json!({"title":"T","content":"C"}))).await;
     let id = created["data"]["id"].as_str().unwrap().to_string();
 
     // An admin cannot rewrite someone else's prayer, but can remove it (moderation).
     let (s, b) = env.call(&env.a1_admin, "PATCH", &format!("/prayers/{id}"), Some(json!({"title":"hacked"}))).await;
     assert_eq!((s, code(&b)), (StatusCode::FORBIDDEN, "FORBIDDEN"));
-    let (s, _) = env.call(&env.a1_leader, "PATCH", &format!("/prayers/{id}"), Some(json!({"title":"mine now"}))).await;
+    let (s, _) = env.call(&env.a1_admin2, "PATCH", &format!("/prayers/{id}"), Some(json!({"title":"mine now"}))).await;
     assert_eq!(s, StatusCode::OK);
 
     // Other FOCs cannot even tell it exists.
@@ -65,16 +65,16 @@ async fn prayer_edit_and_delete_rules() {
     let (s, _) = env.call(&env.b1_admin, "DELETE", &format!("/prayers/{id}"), None).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 
-    // A cell leader cannot delete a prayer they don't own.
+    // Ordinary members use the mobile API, never this one.
     let (_, admins) = env.call(&env.a1_admin, "POST", "/prayers", Some(json!({"title":"Admin's","content":"C"}))).await;
     let admin_prayer = admins["data"]["id"].as_str().unwrap();
-    let (s, _) = env.call(&env.a1_leader, "DELETE", &format!("/prayers/{admin_prayer}"), None).await;
+    let (s, _) = env.call(&env.a1_member, "DELETE", &format!("/prayers/{admin_prayer}"), None).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 
     let (s, _) = env.call(&env.a1_admin, "DELETE", &format!("/prayers/{id}"), None).await;
     assert_eq!(s, StatusCode::NO_CONTENT);
 
-    let (s, b) = env.call(&env.a1_leader, "POST", "/prayers", Some(json!({"title":"  ","content":"C"}))).await;
+    let (s, b) = env.call(&env.a1_admin2, "POST", "/prayers", Some(json!({"title":"  ","content":"C"}))).await;
     assert_eq!((s, code(&b)), (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR"));
     env.cleanup().await;
 }
@@ -84,7 +84,7 @@ async fn prayer_edit_and_delete_rules() {
 #[tokio::test]
 async fn testimony_moderation_flow() {
     let Some(env) = setup().await else { return };
-    let leader = &env.a1_leader;
+    let leader = &env.a1_admin2;
 
     // Author is stamped from identity even if the client tries to forge it.
     let (s, t) = env.call(leader, "POST", "/testimonies", Some(json!({
@@ -112,7 +112,7 @@ async fn testimony_moderation_flow() {
     assert!(!serde_json::to_string(seen).unwrap().contains("Lee"));
 
     // Only admins moderate.
-    let (s, _) = env.call(leader, "POST", &format!("/testimonies/{id}/approve"), None).await;
+    let (s, _) = env.call(&env.a1_member, "POST", &format!("/testimonies/{id}/approve"), None).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
     let (s, b) = env.call(&env.a1_admin, "POST", &format!("/testimonies/{id}/approve"), None).await;
     assert_eq!((s, b["data"]["status"].as_str()), (StatusCode::OK, Some("approved")));
@@ -191,7 +191,7 @@ async fn announcements_scope_and_ownership() {
     // Legacy rows (created before the migration: no recorded owner) stay editable by admins who can see them.
     let legacy: (uuid::Uuid,) = sqlx::query_as(
         "INSERT INTO announcements(title,content,scope,church_id,start_date)
-         SELECT 'Legacy','c','church', id, CURRENT_DATE FROM church WHERE name='A' RETURNING id")
+         SELECT 'Legacy','c','church', id, CURRENT_DATE FROM church WHERE name='Church A' RETURNING id")
         .fetch_one(&env.pool).await.unwrap();
     let (s, _) = env.call(&env.a2_admin, "PATCH", &format!("/announcements/{}", legacy.0), Some(json!({"title":"Legacy 2"}))).await;
     assert_eq!(s, StatusCode::OK);
@@ -216,8 +216,10 @@ async fn sermon_rules() {
     let ok = json!({"title":"Grace","preacher":"Pastor","date":"2026-11-01","content":"Long body text...",
         "tags":[" Faith ","faith","Hope"],"youtube_link":"https://youtube.com/watch?v=1"});
 
-    // Only admins manage sermons; leaders may read.
-    let (s, _) = env.call(&env.a1_leader, "POST", "/sermons", Some(ok.clone())).await;
+    // Only admins use this API (members use the mobile API).
+    let (s, _) = env.call(&env.a1_member, "POST", "/sermons", Some(ok.clone())).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = env.call(&env.a1_member, "GET", "/sermons", None).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
     let (s, created) = env.call(&env.a1_admin, "POST", "/sermons", Some(ok.clone())).await;
     assert_eq!(s, StatusCode::CREATED);
@@ -227,11 +229,11 @@ async fn sermon_rules() {
     let id = created["data"]["id"].as_str().unwrap().to_string();
 
     // Lists omit the large `content`; ?full=true and the single GET include it.
-    let (_, list) = env.call(&env.a1_leader, "GET", "/sermons?start=2026-01-01&end=2026-12-31", None).await;
+    let (_, list) = env.call(&env.a1_admin2, "GET", "/sermons?start=2026-01-01&end=2026-12-31", None).await;
     assert!(find(&list, "Grace").get("content").is_none());
-    let (_, full) = env.call(&env.a1_leader, "GET", "/sermons?start=2026-01-01&end=2026-12-31&full=true", None).await;
+    let (_, full) = env.call(&env.a1_admin2, "GET", "/sermons?start=2026-01-01&end=2026-12-31&full=true", None).await;
     assert_eq!(find(&full, "Grace")["content"], "Long body text...");
-    let (_, one) = env.call(&env.a1_leader, "GET", &format!("/sermons/{id}"), None).await;
+    let (_, one) = env.call(&env.a1_admin2, "GET", &format!("/sermons/{id}"), None).await;
     assert_eq!(one["data"]["content"], "Long body text...");
 
     // Tenant isolation.
@@ -317,5 +319,27 @@ async fn bad_input_uses_the_json_error_envelope() {
         assert_eq!(b["success"], false, "{uri}");
         assert_eq!(code(&b), "VALIDATION_ERROR", "{uri}");
     }
+    env.cleanup().await;
+}
+
+// ───────────────────────── who may use the admin API ─────────────────────────
+
+#[tokio::test]
+async fn ordinary_members_cannot_use_the_admin_api() {
+    let Some(env) = setup().await else { return };
+    let id = uuid::Uuid::nil();
+    let routes = [
+        ("GET", "/members".to_string()), ("GET", "/events".to_string()), ("POST", "/events".to_string()),
+        ("GET", "/sermons".to_string()), ("GET", "/prayers".to_string()), ("GET", "/testimonies".to_string()),
+        ("GET", "/announcements".to_string()), ("POST", format!("/members/{id}/approve")),
+        ("DELETE", format!("/events/{id}")), ("POST", format!("/testimonies/{id}/approve")),
+    ];
+    for (method, uri) in routes {
+        let (s, b) = env.call(&env.a1_member, method, &uri, None).await;
+        assert_eq!((s, code(&b)), (StatusCode::FORBIDDEN, "FORBIDDEN"), "{method} {uri}");
+    }
+    // ...but they can still ask who they are (the mobile app needs this after signing in).
+    let (s, me) = env.call(&env.a1_member, "GET", "/auth/me", None).await;
+    assert_eq!((s, me["data"]["role"].as_str()), (StatusCode::OK, Some("member")));
     env.cleanup().await;
 }

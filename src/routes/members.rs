@@ -11,7 +11,7 @@ pub fn routes() -> Router<SharedState> {
     let reads = Router::new()
         .route("/members", get(member::list))
         .route("/members/{id}", get(member::get))
-        .route_layer(from_fn(|req, next| require_roles(&["admin", "cell_leader"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
 
     // Writes: admins only. Permissions sit right next to the routes they protect.
     let writes = Router::new()

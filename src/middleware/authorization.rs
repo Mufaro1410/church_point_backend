@@ -4,7 +4,7 @@ use super::authentication::AuthUser;
 use crate::errors::{AppError, AuthError};
 
 /// Allows the request only if the user's role is in `allowed`. Fails closed.
-/// Must run AFTER `authenticate`. (Roles today: "admin", "cell_leader".
+/// Must run AFTER `authenticate`. (Only the "admin" role uses this API today; cell leaders are paused until custom roles and permissions exist.
 /// We can evolve this into fine-grained permissions later.)
 pub async fn require_roles(
     allowed: &'static [&'static str],

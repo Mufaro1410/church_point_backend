@@ -6,7 +6,7 @@ pub fn routes() -> Router<SharedState> {
     let reads = Router::new()
         .route("/sermons", get(sermon::list))
         .route("/sermons/{id}", get(sermon::get))
-        .route_layer(from_fn(|req, next| require_roles(&["admin", "cell_leader"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
 
     // Creating, editing and deleting sermons: admins only.
     let writes = Router::new()
