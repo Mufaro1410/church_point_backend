@@ -219,33 +219,33 @@ create table public.family_relationships (
 create table public.foc_categories (
   id uuid not null default gen_random_uuid(), foc_id uuid not null, category_id uuid not null,
   created_at timestamptz not null default now(), constraint foc_categories_pkey primary key (id),
-  constraint foc_categories_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on delete cascade,
-  constraint foc_categories_category_id_fkey foreign key (category_id) references public.categories(id) on delete cascade);
+  constraint foc_categories_foc_fkey foreign key (foc_id) references public.foc_profile(id) on update cascade on delete cascade,
+  constraint foc_categories_category_fkey foreign key (category_id) references public.categories(id) on update cascade on delete cascade);
 create unique index foc_categories_unique on public.foc_categories using btree (foc_id, category_id);
 create table public.foc_currencies (
   id uuid not null default gen_random_uuid(), foc_id uuid not null, currency_id uuid not null,
   created_at timestamptz not null default now(), constraint foc_currencies_pkey primary key (id),
-  constraint foc_currencies_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on delete cascade,
-  constraint foc_currencies_currency_id_fkey foreign key (currency_id) references public.currencies(id) on delete cascade);
+  constraint foc_currencies_foc_fkey foreign key (foc_id) references public.foc_profile(id) on update cascade on delete cascade,
+  constraint foc_currencies_currency_fkey foreign key (currency_id) references public.currencies(id) on update cascade on delete cascade);
 create unique index foc_currencies_unique on public.foc_currencies using btree (foc_id, currency_id);
 create table public.foc_methods (
   id uuid not null default gen_random_uuid(), foc_id uuid not null, method_id uuid not null,
   created_at timestamptz not null default now(), constraint foc_methods_pkey primary key (id),
-  constraint foc_methods_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on delete cascade,
-  constraint foc_methods_method_id_fkey foreign key (method_id) references public.methods(id) on delete cascade);
+  constraint foc_methods_foc_fkey foreign key (foc_id) references public.foc_profile(id) on update cascade on delete cascade,
+  constraint foc_methods_method_fkey foreign key (method_id) references public.methods(id) on update cascade on delete cascade);
 create unique index foc_methods_unique on public.foc_methods using btree (foc_id, method_id);
 create table public.foc_ministries (
   foc_id uuid not null, ministry_id uuid not null, created_at timestamptz not null default now(),
   constraint foc_ministries_pkey primary key (foc_id, ministry_id),
-  constraint foc_ministries_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on delete cascade,
-  constraint foc_ministries_ministry_id_fkey foreign key (ministry_id) references public.ministries(id) on delete cascade);
+  constraint foc_ministries_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on update cascade on delete cascade,
+  constraint foc_ministries_ministry_id_fkey foreign key (ministry_id) references public.ministries(id) on update cascade on delete cascade);
 create index foc_ministries_ministry_id_idx on public.foc_ministries using btree (ministry_id);
 
 create table public.ministry_leaders (
   id uuid not null default gen_random_uuid(), ministry_id uuid not null, foc_id uuid not null,
   updated_at timestamptz default now(), leader_id uuid,
   constraint ministry_leaders_pkey primary key (id),
-  constraint ministry_leaders_ministry_id_fkey foreign key (ministry_id) references public.ministries(id) on delete cascade,
+  constraint ministry_leaders_ministry_id_fkey foreign key (ministry_id) references public.ministries(id) on update cascade on delete cascade,
   constraint ministry_leaders_foc_id_fkey foreign key (foc_id) references public.foc_profile(id) on update cascade on delete cascade,
   constraint ministry_leaders_leader_id_fkey foreign key (leader_id) references public.member_profiles(id) on update cascade on delete set null);
 create unique index ministry_leaders_ministry_foc_unique on public.ministry_leaders using btree (ministry_id, foc_id);
@@ -550,6 +550,12 @@ create trigger trg_event_serving_updated_at before update on public.event_servin
 create trigger testimonies_broadcast after insert or delete or update on public.testimonies for each row execute function public.testimonies_broadcast_trigger();
 create trigger update_testimonies_updated_at before update on public.testimonies for each row execute function public.update_updated_at_column();
 create trigger cell_meetings_broadcast after insert or delete or update on public.cell_meetings for each row execute function public.cell_meetings_broadcast_trigger();
+-- dead WhatsApp-OTP functions (STUBS with the production signatures; the originals reference a missing table)
+create function public.send_whatsapp_otp(user_phone text) returns jsonb language plpgsql security definer as $$ begin return '{}'::jsonb; end $$;
+create function public.verify_whatsapp_otp(user_phone text, user_otp text) returns jsonb language plpgsql security definer as $$ begin return '{}'::jsonb; end $$;
+create function public.verify_whatsapp_otp(user_phone text, user_otp text, signup_data jsonb default null) returns jsonb language plpgsql security definer as $$ begin return '{}'::jsonb; end $$;
+create function public.cleanup_expired_otps() returns integer language plpgsql security definer as $$ begin return 0; end $$;
+
 -- ---------------------------------- Row Level Security: ON for these tables ----------------------------------
 alter table public.announcements enable row level security;
 alter table public.bible_reading_plans enable row level security;
@@ -667,3 +673,5 @@ grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to anon, authenticated, service_role;
 grant all on all sequences in schema public to anon, authenticated, service_role;
 grant all on all functions in schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;

@@ -98,7 +98,7 @@ async fn connect_to(url: &str, db: &str, as_app_admin: bool) -> PgPool {
     builder.connect_with(opts).await.expect("connect to test database")
 }
 
-async fn seed(pool: &PgPool) {
+pub async fn seed(pool: &PgPool) {
     sqlx::query("INSERT INTO church(id, name) VALUES ($1,'Church A'),($2,'Church B')")
         .bind(uid(CHURCH_A)).bind(uid(CHURCH_B)).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO province(id, church_id, name) VALUES ($1,$2,'P1')")
@@ -323,6 +323,15 @@ pub async fn raw_baseline() -> Option<RawDb> {
 }
 
 impl RawDb {
+    /// Applies migrations whose version is <= `max_version` (and skips ones already applied). Lets a test
+    /// create data in the OLD shape, migrate, and check the conversion.
+    pub async fn migrate_through(&self, max_version: i64) {
+        sqlx::raw_sql(DISABLE_HTTP_EXTENSION).execute(&self.su).await.expect("disable http");
+        let subset: Vec<_> = MIGRATOR.iter().filter(|m| m.version <= max_version).cloned().collect();
+        let migrator = sqlx::migrate::Migrator { migrations: std::borrow::Cow::Owned(subset), ..sqlx::migrate::Migrator::DEFAULT };
+        migrator.run(&self.app).await.expect("migrate");
+    }
+
     pub async fn cleanup(self) {
         self.su.close().await;
         self.app.close().await;

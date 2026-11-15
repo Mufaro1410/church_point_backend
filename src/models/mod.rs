@@ -2,6 +2,7 @@ pub mod announcement;
 pub mod auth;
 pub mod common;
 pub mod event;
+pub mod finance;
 pub mod member;
 pub mod prayer;
 pub mod scope;

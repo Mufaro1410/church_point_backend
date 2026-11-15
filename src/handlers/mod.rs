@@ -4,6 +4,7 @@ pub mod announcement;
 pub mod auth;
 pub mod event;
 pub mod extract;
+pub mod finance;
 pub mod foc;
 pub mod health;
 pub mod member;

@@ -1,5 +1,6 @@
 pub mod announcement_service;
 pub mod event_service;
+pub mod finance_service;
 pub mod foc_service;
 pub mod member_service;
 pub mod prayer_service;

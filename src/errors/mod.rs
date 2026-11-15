@@ -5,6 +5,7 @@ pub use app_error::{AppError, AppResult};
 pub use domain::announcement::AnnouncementError;
 pub use domain::auth::AuthError;
 pub use domain::event::EventError;
+pub use domain::finance::FinanceError;
 pub use domain::foc::FocError;
 pub use domain::member::MemberError;
 pub use domain::prayer::PrayerError;

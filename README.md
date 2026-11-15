@@ -43,3 +43,17 @@ Rules (each one was learned the hard way and is enforced by a test):
 ## Known open items (see tests/lockdown_tests.rs)
 Anonymous visitors can still read `member_profiles` (phones, addresses) and `foc_profile.payment_details`.
 They are closed in a later phase, once the web and mobile apps stop reading those tables directly.
+
+## Finance API (admin only)
+Money is `numeric(14,2)` and always sent as TEXT. Rate = units of a currency per 1 USD (USD = 1).
+Each record stores the rate it was entered with, so changing a rate never rewrites history. Records are voided, never deleted.
+
+    GET  /finance/setup                      currencies (with this FOC's rates), categories, methods
+    POST /finance/currencies                 {name, symbol?, rate?}      add or enable a currency
+    PUT  /finance/currencies/{id}            {selected, rate?}           enable/disable, set rate
+    POST /finance/categories {name,type}     PUT /finance/categories/{id} {selected}
+    POST /finance/methods {name}             PUT /finance/methods/{id}    {selected}
+    GET|POST /incomes   GET|PATCH /incomes/{id}   POST /incomes/{id}/void      (same for /expenses)
+    GET  /finance/summary?start&end          totals in USD and by currency / category / method
+    GET  /finance/history/{id}               audit trail of one record
+PATCH and void need a `reason`; both are written to `finance_audit` in the same transaction as the change.

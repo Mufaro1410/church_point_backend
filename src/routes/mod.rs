@@ -13,6 +13,7 @@ use crate::{
 pub mod announcements;
 pub mod auth;
 pub mod events;
+pub mod finance;
 pub mod foc;
 pub mod members;
 pub mod prayers;
@@ -33,6 +34,7 @@ pub fn build(state: SharedState) -> Router {
     let api = Router::new()
         .merge(auth::routes())
         .merge(events::routes())
+        .merge(finance::routes())
         .merge(foc::routes())
         .merge(members::routes())
         .merge(sermons::routes())

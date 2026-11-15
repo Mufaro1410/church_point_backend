@@ -1,6 +1,7 @@
 pub mod announcement;
 pub mod auth;
 pub mod event;
+pub mod finance;
 pub mod foc;
 pub mod member;
 pub mod prayer;

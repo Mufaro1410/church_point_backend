@@ -6,7 +6,7 @@ use axum::{
 use serde_json::json;
 
 use super::domain::{
-    announcement::AnnouncementError, auth::AuthError, event::EventError, foc::FocError,
+    announcement::AnnouncementError, auth::AuthError, event::EventError, finance::FinanceError, foc::FocError,
     member::MemberError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
 };
 
@@ -22,6 +22,8 @@ pub enum AppError {
     Member(#[from] MemberError),
     #[error(transparent)]
     Foc(#[from] FocError),
+    #[error(transparent)]
+    Finance(#[from] FinanceError),
     #[error(transparent)]
     Event(#[from] EventError),
     #[error(transparent)]
@@ -63,6 +65,7 @@ impl AppError {
             AppError::Auth(e) => (e.status(), e.code(), None),
             AppError::Member(e) => (e.status(), e.code(), None),
             AppError::Foc(e) => (e.status(), e.code(), None),
+            AppError::Finance(e) => (e.status(), e.code(), None),
             AppError::Event(e) => (e.status(), e.code(), None),
             AppError::Sermon(e) => (e.status(), e.code(), None),
             AppError::Prayer(e) => (e.status(), e.code(), None),
