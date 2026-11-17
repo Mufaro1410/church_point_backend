@@ -307,3 +307,16 @@ pub async fn select_method(pool: &PgPool, foc: Uuid, id: Uuid) -> Result<bool, s
     }
     Ok(exists)
 }
+
+/// How many incomes + expenses of this FOC use a currency / category / method.
+/// `column` is one of our own literals, never user input.
+pub async fn usage_count(pool: &PgPool, foc_id: Uuid, column: &str, id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(&format!(
+        "SELECT (SELECT count(*) FROM incomes WHERE foc_id = $1 AND {column} = $2)
+              + (SELECT count(*) FROM expenses WHERE foc_id = $1 AND {column} = $2)"
+    ))
+    .bind(foc_id)
+    .bind(id)
+    .fetch_one(pool)
+    .await
+}

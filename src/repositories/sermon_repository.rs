@@ -108,3 +108,14 @@ pub async fn delete(pool: &PgPool, id: Uuid, foc_id: Uuid) -> Result<u64, sqlx::
         .await?;
     Ok(res.rows_affected())
 }
+
+pub async fn set_audio(pool: &PgPool, id: Uuid, foc_id: Uuid, url: Option<&str>) -> Result<Option<Value>, sqlx::Error> {
+    sqlx::query_scalar(
+        "UPDATE sermons SET audio_url = $3, updated_at = now() WHERE id = $1 AND foc_id = $2 RETURNING to_jsonb(sermons)",
+    )
+    .bind(id)
+    .bind(foc_id)
+    .bind(url)
+    .fetch_optional(pool)
+    .await
+}

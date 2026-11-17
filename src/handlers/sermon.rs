@@ -55,3 +55,13 @@ pub async fn delete(
     sermon_service::delete(&state, &auth, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+pub async fn audio_upload_url(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, ApiPath(id): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
+    Ok(Json(ApiResponse::ok(sermon_service::audio_upload_url(&s, &a, id).await?)))
+}
+pub async fn audio_confirm(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, ApiPath(id): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
+    Ok(Json(ApiResponse::ok(sermon_service::audio_confirm(&s, &a, id).await?)))
+}
+pub async fn audio_delete(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, ApiPath(id): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
+    Ok(Json(ApiResponse::ok(sermon_service::audio_delete(&s, &a, id).await?)))
+}

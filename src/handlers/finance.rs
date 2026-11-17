@@ -86,3 +86,13 @@ macro_rules! catalogue_handlers {
 catalogue_handlers!(set_currency, set_currency, SelectCurrency, add_currency, add_currency, NewCurrency);
 catalogue_handlers!(set_category, set_category, SelectItem, add_category, add_category, NewCategory);
 catalogue_handlers!(set_method, set_method, SelectItem, add_method, add_method, NewMethod);
+
+pub async fn currency_usage(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, super::extract::ApiPath(id): super::extract::ApiPath<Uuid>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(crate::services::finance_service::usage(&s, &a, "currency_id", id).await?)))
+}
+pub async fn category_usage(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, super::extract::ApiPath(id): super::extract::ApiPath<Uuid>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(crate::services::finance_service::usage(&s, &a, "category_id", id).await?)))
+}
+pub async fn method_usage(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, super::extract::ApiPath(id): super::extract::ApiPath<Uuid>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(crate::services::finance_service::usage(&s, &a, "method_id", id).await?)))
+}

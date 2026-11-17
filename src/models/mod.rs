@@ -1,9 +1,11 @@
 pub mod announcement;
 pub mod auth;
+pub mod catalog;
 pub mod common;
 pub mod event;
 pub mod finance;
 pub mod member;
+pub mod org;
 pub mod prayer;
 pub mod scope;
 pub mod sermon;

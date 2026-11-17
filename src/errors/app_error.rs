@@ -7,7 +7,7 @@ use serde_json::json;
 
 use super::domain::{
     announcement::AnnouncementError, auth::AuthError, event::EventError, finance::FinanceError, foc::FocError,
-    member::MemberError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
+    member::MemberError, org::OrgError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
 };
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -29,6 +29,8 @@ pub enum AppError {
     #[error(transparent)]
     Sermon(#[from] SermonError),
     #[error(transparent)]
+    Org(#[from] OrgError),
+    #[error(transparent)]
     Prayer(#[from] PrayerError),
     #[error(transparent)]
     Testimony(#[from] TestimonyError),
@@ -36,6 +38,10 @@ pub enum AppError {
     Announcement(#[from] AnnouncementError),
     #[error("{0}")]
     Validation(String),
+    #[error("{0}")]
+    Upstream(String),
+    #[error("{0} is not configured on the server.")]
+    NotConfigured(&'static str),
     #[error("Database error")]
     Database(#[from] sqlx::Error),
     #[error("Internal error: {0}")]
@@ -68,6 +74,7 @@ impl AppError {
             AppError::Finance(e) => (e.status(), e.code(), None),
             AppError::Event(e) => (e.status(), e.code(), None),
             AppError::Sermon(e) => (e.status(), e.code(), None),
+            AppError::Org(e) => (e.status(), e.code(), None),
             AppError::Prayer(e) => (e.status(), e.code(), None),
             AppError::Testimony(e) => (e.status(), e.code(), None),
             AppError::Announcement(e) => (e.status(), e.code(), None),
@@ -76,6 +83,8 @@ impl AppError {
                 Some((s, c, m)) => (s, c, Some(m)),
                 None => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", None),
             },
+            AppError::Upstream(_) => (StatusCode::BAD_GATEWAY, "UPSTREAM_ERROR", Some("A supporting service is not responding. Try again.")),
+            AppError::NotConfigured(_) => (StatusCode::SERVICE_UNAVAILABLE, "NOT_CONFIGURED", None),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", None),
         }
     }

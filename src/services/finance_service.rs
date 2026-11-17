@@ -323,3 +323,8 @@ pub async fn add_method(state: &SharedState, auth: &AuthUser, req: NewMethod) ->
     repo::select_method(&state.db, foc, id).await?;
     setup(state, auth).await
 }
+
+pub async fn usage(state: &SharedState, auth: &AuthUser, column: &'static str, id: Uuid) -> AppResult<Value> {
+    let n = crate::repositories::finance_repository::usage_count(&state.db, auth.require_foc()?, column, id).await?;
+    Ok(serde_json::json!({ "count": n }))
+}

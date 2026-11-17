@@ -23,18 +23,49 @@ pub struct AuthUser {
     pub foc_id: Option<Uuid>,
     pub church_id: Option<Uuid>,
     pub province_id: Option<Uuid>,
+    pub foc_status: Option<String>,
     pub role: Option<String>,
 }
 
 impl AuthUser {
     pub fn is_admin(&self) -> bool {
-        self.role.as_deref() == Some("admin")
+        matches!(self.role.as_deref(), Some("admin" | "super_admin"))
+    }
+
+    pub fn is_super_admin(&self) -> bool {
+        self.role.as_deref() == Some("super_admin")
     }
 
     /// Most data belongs to a FOC; fail closed if the user has none.
     pub fn require_foc(&self) -> Result<Uuid, AuthError> {
-        self.foc_id.ok_or(AuthError::NoFoc)
+        let foc = self.foc_id.ok_or(AuthError::NoFoc)?;
+        if self.foc_status.as_deref() != Some("approved") && !self.is_super_admin() {
+            return Err(AuthError::FocNotApproved);
+        }
+        Ok(foc)
     }
+}
+
+/// For the one endpoint a brand-new user can call before they have a member profile.
+#[derive(Debug, Clone)]
+pub struct TokenUser {
+    pub user_id: Uuid,
+}
+
+pub async fn authenticate_token(
+    State(state): State<SharedState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let token = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or(AuthError::MissingToken)?;
+    let claims = jwt::verify_supabase_token(token, &state.settings.supabase_jwt_secret)?;
+    req.extensions_mut().insert(TokenUser { user_id: claims.sub });
+    Ok(next.run(req).await)
 }
 
 pub async fn authenticate(
@@ -61,6 +92,7 @@ pub async fn authenticate(
         foc_id: profile.foc_id,
         church_id: profile.church_id,
         province_id: profile.province_id,
+        foc_status: profile.foc_status,
         role: profile.role,
     });
 

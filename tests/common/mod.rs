@@ -23,6 +23,8 @@ pub fn test_app() -> Router {
         db_max_connections: 1,
         supabase_jwt_secret: "test-secret".into(),
         supabase_url: None,
+        supabase_anon_key: None,
+        supabase_service_key: None,
         cors_origins: vec![],
     };
     build_app(AppState::new(pool, settings))

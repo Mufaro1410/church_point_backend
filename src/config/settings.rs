@@ -9,6 +9,10 @@ pub struct Settings {
     pub supabase_jwt_secret: String,
     /// Optional. When set, sermon `audio_url`s must point into this project's storage.
     pub supabase_url: Option<String>,
+    /// Public (anon) key: lets Axum call Supabase Auth on behalf of users (login, refresh, sign-up).
+    pub supabase_anon_key: Option<String>,
+    /// Secret key: only Axum holds it (storage signing, deleting files, cleaning up failed sign-ups).
+    pub supabase_service_key: Option<String>,
     pub cors_origins: Vec<String>,
 }
 
@@ -22,6 +26,8 @@ impl Settings {
             db_max_connections: parse_or("DB_MAX_CONNECTIONS", 10)?,
             supabase_jwt_secret: required("SUPABASE_JWT_SECRET")?,
             supabase_url: env::var("SUPABASE_URL").ok().filter(|s| !s.trim().is_empty()),
+            supabase_anon_key: env::var("SUPABASE_ANON_KEY").ok().filter(|s| !s.trim().is_empty()),
+            supabase_service_key: env::var("SUPABASE_SERVICE_ROLE_KEY").ok().filter(|s| !s.trim().is_empty()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_default()
                 .split(',')

@@ -2,12 +2,15 @@ use serde::Serialize;
 
 pub mod announcement;
 pub mod auth;
+pub mod catalog;
 pub mod event;
 pub mod extract;
 pub mod finance;
 pub mod foc;
 pub mod health;
 pub mod member;
+pub mod org;
+pub mod platform;
 pub mod prayer;
 pub mod sermon;
 pub mod testimony;

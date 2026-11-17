@@ -1,24 +1,28 @@
 use axum::{
     Router,
     middleware::from_fn,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
-use crate::{handlers::member, middleware::authorization::require_roles, state::SharedState};
+use crate::{
+    handlers::member as h,
+    middleware::authorization::{ADMIN, require_roles},
+    state::SharedState,
+};
 
 pub fn routes() -> Router<SharedState> {
-    // Reads: admins and cell leaders.
-    let reads = Router::new()
-        .route("/members", get(member::list))
-        .route("/members/{id}", get(member::get))
-        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
-
-    // Writes: admins only. Permissions sit right next to the routes they protect.
-    let writes = Router::new()
-        .route("/members/{id}", axum::routing::patch(member::update).delete(member::delete))
-        .route("/members/{id}/approve", post(member::approve))
-        .route("/members/{id}/reject", post(member::reject))
-        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
-
-    reads.merge(writes)
+    Router::new()
+        .route("/members", get(h::list).post(h::create))
+        .route("/members/{id}", get(h::get).patch(h::update).delete(h::delete))
+        .route("/members/{id}/approve", post(h::approve))
+        .route("/members/{id}/pending", post(h::set_pending))
+        .route("/members/{id}/reject", post(h::reject))
+        .route("/members/{id}/release", post(h::release))
+        .route("/members/{id}/role", axum::routing::put(h::set_role))
+        .route("/members/{id}/family", get(h::family).post(h::add_family))
+        .route("/members/{id}/contributions", get(h::contributions))
+        .route("/members/{id}/attendance", get(h::attendance))
+        .route("/members/{id}/activity", get(h::activity))
+        .route("/family/{id}", delete(h::remove_family))
+        .route_layer(from_fn(|req, next| require_roles(ADMIN, req, next)))
 }

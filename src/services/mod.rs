@@ -1,8 +1,12 @@
 pub mod announcement_service;
+pub mod auth_service;
+pub mod catalog_service;
 pub mod event_service;
 pub mod finance_service;
 pub mod foc_service;
 pub mod member_service;
+pub mod org_service;
+pub mod platform_service;
 pub mod prayer_service;
 pub mod scope;
 pub mod sermon_service;

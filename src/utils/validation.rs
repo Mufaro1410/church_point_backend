@@ -73,9 +73,96 @@ pub fn clean_tags(tags: Vec<String>) -> Result<Vec<String>, AppError> {
     Ok(out)
 }
 
+/// Single-line text: control characters and zero-width characters removed, every run of
+/// whitespace (including line breaks and tabs) becomes one space, ends trimmed.
+pub fn format_line(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}'))
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Multi-line text (sermon body, summary): normalises line endings to \n, removes control and
+/// zero-width characters, trims each line's trailing spaces, keeps at most one blank line in a row,
+/// trims the ends. Indentation and paragraph structure are kept.
+pub fn format_block(s: &str) -> String {
+    let s = s.replace("\r\n", "\n").replace('\r', "\n").replace('\t', "    ");
+    let s: String = s
+        .chars()
+        .filter(|c| (*c == '\n' || !c.is_control()) && !matches!(c, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}'))
+        .collect();
+    let mut out: Vec<&str> = Vec::new();
+    let mut blank = false;
+    for line in s.split('\n') {
+        let line = line.trim_end();
+        if line.is_empty() {
+            if blank || out.is_empty() {
+                continue;
+            }
+            blank = true;
+        } else {
+            blank = false;
+        }
+        out.push(line);
+    }
+    out.join("\n").trim().to_string()
+}
+
+fn limited(field: &str, v: String, max: usize) -> Result<String, AppError> {
+    if v.chars().count() > max {
+        return Err(err(format!("{field} must be at most {max} characters.")));
+    }
+    Ok(v)
+}
+
+pub fn required_line(field: &str, value: &str, max: usize) -> Result<String, AppError> {
+    let v = format_line(value);
+    if v.is_empty() {
+        return Err(err(format!("{field} is required.")));
+    }
+    limited(field, v, max)
+}
+
+pub fn required_block(field: &str, value: &str, max: usize) -> Result<String, AppError> {
+    let v = format_block(value);
+    if v.is_empty() {
+        return Err(err(format!("{field} is required.")));
+    }
+    limited(field, v, max)
+}
+
+pub fn optional_line(field: &str, value: Option<String>, max: usize) -> Result<Option<String>, AppError> {
+    match value.map(|s| format_line(&s)).filter(|s| !s.is_empty()) {
+        Some(v) => limited(field, v, max).map(Some),
+        None => Ok(None),
+    }
+}
+
+pub fn optional_block(field: &str, value: Option<String>, max: usize) -> Result<Option<String>, AppError> {
+    match value.map(|s| format_block(&s)).filter(|s| !s.is_empty()) {
+        Some(v) => limited(field, v, max).map(Some),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lines_are_collapsed_and_cleaned() {
+        assert_eq!(format_line("  The\u{200b}  Power \n of\tPrayer  "), "The Power of Prayer");
+        assert_eq!(format_line("   "), "");
+    }
+
+    #[test]
+    fn blocks_keep_paragraphs_but_not_mess() {
+        let raw = "\r\n  Intro  \r\n\r\n\r\n\r\nPoint 1   \n\tsub point\u{0007}\n\n\n";
+        assert_eq!(format_block(raw), "Intro\n\nPoint 1\n    sub point");
+    }
+
 
     #[test]
     fn required_text_trims_and_limits() {

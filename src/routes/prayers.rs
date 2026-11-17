@@ -8,5 +8,5 @@ pub fn routes() -> Router<SharedState> {
     Router::new()
         .route("/prayers", get(prayer::list).post(prayer::create))
         .route("/prayers/{id}", get(prayer::get).patch(prayer::update).delete(prayer::delete))
-        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)))
+        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)))
 }

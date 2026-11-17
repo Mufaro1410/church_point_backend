@@ -6,7 +6,7 @@ pub fn routes() -> Router<SharedState> {
     let reads = Router::new()
         .route("/announcements", get(announcement::list))
         .route("/announcements/{id}", get(announcement::get))
-        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
 
     let writes = Router::new()
         .route("/announcements", axum::routing::post(announcement::create))
@@ -14,7 +14,7 @@ pub fn routes() -> Router<SharedState> {
             "/announcements/{id}",
             axum::routing::patch(announcement::update).delete(announcement::delete),
         )
-        .route_layer(from_fn(|req, next| require_roles(&["admin"], req, next)));
+        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
 
     reads.merge(writes)
 }

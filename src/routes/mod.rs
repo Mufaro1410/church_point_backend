@@ -6,16 +6,19 @@ use tower_http::{
 
 use crate::{
     handlers::health,
-    middleware::{authentication::authenticate, logging, request_id},
+    middleware::{authentication::{authenticate, authenticate_token}, logging, request_id},
     state::SharedState,
 };
 
 pub mod announcements;
 pub mod auth;
+pub mod catalog;
 pub mod events;
 pub mod finance;
 pub mod foc;
 pub mod members;
+pub mod org;
+pub mod platform;
 pub mod prayers;
 pub mod sermons;
 pub mod testimonies;
@@ -38,15 +41,21 @@ pub fn build(state: SharedState) -> Router {
         .merge(foc::routes())
         .merge(members::routes())
         .merge(sermons::routes())
+        .merge(catalog::routes())
+        .merge(org::routes())
+        .merge(platform::routes())
         .merge(prayers::routes())
         .merge(testimonies::routes())
         .merge(announcements::routes())
         .route_layer(from_fn_with_state(state.clone(), authenticate));
 
+    // New users have no profile yet, so these only need a valid token.
+    let token_only = auth::token_routes().route_layer(from_fn_with_state(state.clone(), authenticate_token));
+
     Router::new()
         .route("/health", get(health::health))
         .route("/ready", get(health::ready))
-        .nest("/api/v1", api)
+        .nest("/api/v1", api.merge(token_only).merge(auth::public_routes()))
         .with_state(state.clone())
         // Layers added last run first (outermost).
         .layer(cors_layer(&state.settings.cors_origins))

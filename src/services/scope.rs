@@ -51,6 +51,7 @@ mod tests {
             foc_id: Some(Uuid::new_v4()),
             church_id: Some(Uuid::new_v4()),
             province_id: province.then(Uuid::new_v4),
+            foc_status: Some("approved".into()),
             role: Some("admin".into()),
         }
     }

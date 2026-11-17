@@ -74,7 +74,7 @@ const A1_MEMBER: u32 = 23;
 const A2_ADMIN: u32 = 24;
 const B1_ADMIN: u32 = 25;
 
-fn token_for(user_id: Uuid) -> String {
+pub fn token_for(user_id: Uuid) -> String {
     let claims = json!({ "sub": user_id, "aud": "authenticated", "exp": chrono::Utc::now().timestamp() + 3600 });
     encode(&Header::default(), &claims, &EncodingKey::from_secret(SECRET.as_bytes())).unwrap()
 }
@@ -224,6 +224,11 @@ pub struct Env {
 }
 
 pub async fn setup() -> Option<Env> {
+    setup_with(None).await
+}
+
+/// `mock_supabase`: base url of a fake Supabase (Auth + Storage); also switches on the API keys.
+pub async fn setup_with(mock_supabase: Option<String>) -> Option<Env> {
     let url = test_url()?;
     let t = templates(&url).await;
     let (admin, name) = copy_template(&url, &t.migrated).await;
@@ -235,7 +240,9 @@ pub async fn setup() -> Option<Env> {
         database_url: String::new(),
         db_max_connections: 5,
         supabase_jwt_secret: SECRET.into(),
-        supabase_url: Some(SUPABASE_URL.into()),
+        supabase_url: Some(mock_supabase.clone().unwrap_or_else(|| SUPABASE_URL.into())),
+        supabase_anon_key: mock_supabase.as_ref().map(|_| "anon-key".to_string()),
+        supabase_service_key: mock_supabase.as_ref().map(|_| "service-key".to_string()),
         cors_origins: vec![],
     };
     let app = build_app(AppState::new(pool.clone(), settings));
