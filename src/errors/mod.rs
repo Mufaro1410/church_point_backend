@@ -9,6 +9,7 @@ pub use domain::finance::FinanceError;
 pub use domain::foc::FocError;
 pub use domain::member::MemberError;
 pub use domain::org::OrgError;
+pub use domain::payment::PaymentError;
 pub use domain::prayer::PrayerError;
 pub use domain::sermon::SermonError;
 pub use domain::testimony::TestimonyError;

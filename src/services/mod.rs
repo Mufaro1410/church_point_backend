@@ -6,6 +6,7 @@ pub mod finance_service;
 pub mod foc_service;
 pub mod member_service;
 pub mod org_service;
+pub mod payment_service;
 pub mod platform_service;
 pub mod prayer_service;
 pub mod scope;

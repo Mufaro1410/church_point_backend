@@ -8,3 +8,4 @@ pub mod org;
 pub mod prayer;
 pub mod sermon;
 pub mod testimony;
+pub mod payment;

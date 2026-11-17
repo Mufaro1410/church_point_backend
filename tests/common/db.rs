@@ -229,6 +229,11 @@ pub async fn setup() -> Option<Env> {
 
 /// `mock_supabase`: base url of a fake Supabase (Auth + Storage); also switches on the API keys.
 pub async fn setup_with(mock_supabase: Option<String>) -> Option<Env> {
+    setup_custom(mock_supabase, None).await
+}
+
+/// Also lets a test point the server at a fake Paynow.
+pub async fn setup_custom(mock_supabase: Option<String>, paynow: Option<String>) -> Option<Env> {
     let url = test_url()?;
     let t = templates(&url).await;
     let (admin, name) = copy_template(&url, &t.migrated).await;
@@ -242,6 +247,9 @@ pub async fn setup_with(mock_supabase: Option<String>) -> Option<Env> {
         db_min_connections: 0,
         auth_cache_secs: 0,
         ffmpeg_bin: "ffmpeg".into(),
+        payments_key: Some([7u8; 32]),
+        public_base_url: Some("https://example.test".into()),
+        paynow_base_url: paynow.unwrap_or_else(|| "https://www.paynow.co.zw".into()),
         audio_max_mb: 5,
         supabase_jwt_secret: SECRET.into(),
         supabase_url: Some(mock_supabase.clone().unwrap_or_else(|| SUPABASE_URL.into())),
@@ -293,6 +301,17 @@ impl Env {
     }
 
     /// Sends raw bytes (an audio file) as the body.
+    /// A public (no login) form post, like Paynow calling back.
+    pub async fn raw_post(&self, uri: &str, form: &str) -> (StatusCode, Value) {
+        let req = Request::builder().method("POST").uri(format!("/api/v1{uri}"))
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(form.to_string())).unwrap();
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let b = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&b).unwrap_or(Value::Null))
+    }
+
     pub async fn put_raw(&self, who: &Actor, uri: &str, bytes: Vec<u8>) -> (StatusCode, Value) {
         let req = Request::builder().method("PUT").uri(format!("/api/v1{uri}"))
             .header(header::AUTHORIZATION, format!("Bearer {}", who.token))

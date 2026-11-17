@@ -156,6 +156,7 @@ impl SupabaseClient {
         let r = self.as_service(self.req(Method::POST, &format!("/storage/v1/object/{BUCKET}/{path}"))?)?
             .header("x-upsert", "true")
             .header("content-type", content_type)
+            .timeout(std::time::Duration::from_secs(300)) // uploads over a slow link need longer than the 15s default
             .body(body);
         match self.send(r).await? {
             (200..=299, _) => Ok(()),

@@ -22,6 +22,12 @@ pub struct Settings {
     /// Secret key: only Axum holds it (storage signing, deleting files, cleaning up failed sign-ups).
     pub supabase_service_key: Option<String>,
     pub cors_origins: Vec<String>,
+    /// 32-byte key (base64) that protects each church's Paynow key in the database.
+    pub payments_key: Option<[u8; 32]>,
+    /// Public https address of THIS server, so Paynow can report results (e.g. a tunnel while testing).
+    pub public_base_url: Option<String>,
+    /// Paynow address (override only for testing).
+    pub paynow_base_url: String,
 }
 
 impl Settings {
@@ -40,6 +46,12 @@ impl Settings {
             supabase_url: env::var("SUPABASE_URL").ok().filter(|s| !s.trim().is_empty()),
             supabase_anon_key: env::var("SUPABASE_ANON_KEY").ok().filter(|s| !s.trim().is_empty()),
             supabase_service_key: env::var("SUPABASE_SERVICE_ROLE_KEY").ok().filter(|s| !s.trim().is_empty()),
+            payments_key: match env::var("PAYMENTS_ENCRYPTION_KEY").ok().filter(|s| !s.trim().is_empty()) {
+                Some(k) => Some(crate::utils::crypto::parse_key(&k)?),
+                None => None,
+            },
+            public_base_url: env::var("PUBLIC_BASE_URL").ok().map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()),
+            paynow_base_url: env::var("PAYNOW_BASE_URL").unwrap_or_else(|_| "https://www.paynow.co.zw".into()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_default()
                 .split(',')

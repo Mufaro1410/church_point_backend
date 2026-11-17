@@ -7,7 +7,7 @@ use serde_json::json;
 
 use super::domain::{
     announcement::AnnouncementError, auth::AuthError, event::EventError, finance::FinanceError, foc::FocError,
-    member::MemberError, org::OrgError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
+    member::MemberError, org::OrgError, payment::PaymentError, prayer::PrayerError, sermon::SermonError, testimony::TestimonyError,
 };
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -36,6 +36,8 @@ pub enum AppError {
     Testimony(#[from] TestimonyError),
     #[error(transparent)]
     Announcement(#[from] AnnouncementError),
+    #[error(transparent)]
+    Payment(#[from] PaymentError),
     #[error("{0}")]
     Validation(String),
     #[error("{0}")]
@@ -56,6 +58,9 @@ fn client_db_error(e: &sqlx::Error) -> Option<(StatusCode, &'static str, &'stati
     let code = e.as_database_error()?.code()?;
     let code = code.as_ref();
     match code {
+        "23505" if e.as_database_error().and_then(|d| d.constraint()).is_some_and(|c| c.contains("email")) => {
+            Some((StatusCode::CONFLICT, "DUPLICATE_EMAIL", "Someone with this email address already exists."))
+        }
         "23505" => Some((StatusCode::CONFLICT, "DUPLICATE_VALUE", "A record with these values already exists.")),
         "23503" => Some((StatusCode::CONFLICT, "LINKED_RECORDS", "This record is linked to other records.")),
         "23502" => Some((StatusCode::UNPROCESSABLE_ENTITY, "MISSING_FIELD", "A required field is missing.")),
@@ -77,6 +82,7 @@ impl AppError {
             AppError::Event(e) => (e.status(), e.code(), None),
             AppError::Sermon(e) => (e.status(), e.code(), None),
             AppError::Org(e) => (e.status(), e.code(), None),
+            AppError::Payment(e) => (e.status(), e.code(), None),
             AppError::Prayer(e) => (e.status(), e.code(), None),
             AppError::Testimony(e) => (e.status(), e.code(), None),
             AppError::Announcement(e) => (e.status(), e.code(), None),
@@ -96,6 +102,9 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, fixed_message) = self.parts();
+        if let AppError::Upstream(m) = &self {
+            tracing::error!(cause = %m, "upstream service failed"); // so the real reason is in the log
+        }
         let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = ?self, "unexpected error"); // log cause, hide from client
             "An unexpected error occurred.".to_string()

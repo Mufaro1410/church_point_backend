@@ -11,3 +11,4 @@ pub mod scope_sql;
 pub mod sermon_repository;
 pub mod testimony_repository;
 pub mod user_repository;
+pub mod payment_repository;

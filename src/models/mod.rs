@@ -10,3 +10,4 @@ pub mod prayer;
 pub mod scope;
 pub mod sermon;
 pub mod testimony;
+pub mod payment;

@@ -23,7 +23,7 @@ fn bad(msg: &str) -> AppError {
     AppError::Validation(msg.to_string())
 }
 
-fn check_amount(a: Decimal) -> AppResult<Decimal> {
+pub(crate) fn check_amount(a: Decimal) -> AppResult<Decimal> {
     if a <= Decimal::ZERO {
         return Err(bad("amount must be greater than zero."));
     }
@@ -52,7 +52,7 @@ fn check_reason(reason: &str) -> AppResult<String> {
 }
 
 /// The rate to snapshot: USD is always 1; any other currency needs a rate set by this FOC.
-async fn rate_for(conn: &mut PgConnection, foc: Uuid, currency: Uuid) -> AppResult<Decimal> {
+pub(crate) async fn rate_for(conn: &mut PgConnection, foc: Uuid, currency: Uuid) -> AppResult<Decimal> {
     let (rate, name) = repo::currency_for_foc(conn, foc, currency).await?.ok_or(FinanceError::CurrencyNotEnabled)?;
     if name.eq_ignore_ascii_case("USD") {
         return Ok(Decimal::ONE);
@@ -60,7 +60,7 @@ async fn rate_for(conn: &mut PgConnection, foc: Uuid, currency: Uuid) -> AppResu
     rate.ok_or_else(|| FinanceError::MissingRate.into())
 }
 
-async fn check_category(conn: &mut PgConnection, foc: Uuid, category: Uuid, kind: Kind) -> AppResult<()> {
+pub(crate) async fn check_category(conn: &mut PgConnection, foc: Uuid, category: Uuid, kind: Kind) -> AppResult<()> {
     match repo::category_type_for_foc(conn, foc, category).await? {
         None => Err(FinanceError::CategoryNotEnabled.into()),
         Some(t) if t != kind.name() => Err(FinanceError::WrongCategoryType.into()),
@@ -68,7 +68,7 @@ async fn check_category(conn: &mut PgConnection, foc: Uuid, category: Uuid, kind
     }
 }
 
-async fn check_method(conn: &mut PgConnection, foc: Uuid, method: Uuid) -> AppResult<()> {
+pub(crate) async fn check_method(conn: &mut PgConnection, foc: Uuid, method: Uuid) -> AppResult<()> {
     if repo::method_enabled(conn, foc, method).await? { Ok(()) } else { Err(FinanceError::MethodNotEnabled.into()) }
 }
 
@@ -327,4 +327,22 @@ pub async fn add_method(state: &SharedState, auth: &AuthUser, req: NewMethod) ->
 pub async fn usage(state: &SharedState, auth: &AuthUser, column: &'static str, id: Uuid) -> AppResult<Value> {
     let n = crate::repositories::finance_repository::usage_count(&state.db, auth.require_foc()?, column, id).await?;
     Ok(serde_json::json!({ "count": n }))
+}
+
+/// Records money that arrived online (called once a payment is confirmed paid). Audited like any other income.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn record_online_income(
+    conn: &mut PgConnection, foc: Uuid, member: Uuid, currency: Uuid, category: Uuid, method: Uuid, amount: Decimal, description: String,
+) -> AppResult<Uuid> {
+    let rate = rate_for(conn, foc, currency).await?;
+    check_category(conn, foc, category, Kind::Income).await?;
+    check_method(conn, foc, method).await?;
+    let entry = ValidEntry {
+        amount, currency_id: currency, category_id: category, method_id: method, description: Some(description),
+        date: Utc::now().date_naive(), rate, member_id: Some(member), event_id: None, supplier: None, ministry_id: None,
+    };
+    let id = repo::insert_entry(conn, Kind::Income, foc, member, &entry).await?;
+    let after = repo::find_entry(conn, Kind::Income, id, foc).await?.ok_or(FinanceError::EntryNotFound)?;
+    repo::insert_audit(conn, foc, Kind::Income, id, "create", member, None, None, Some(&after)).await?;
+    Ok(id)
 }

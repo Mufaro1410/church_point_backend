@@ -9,6 +9,7 @@ pub struct AppState {
     /// Who a token belongs to, remembered for a few seconds (see `auth_cache_secs`).
     pub auth_cache: std::sync::Mutex<std::collections::HashMap<uuid::Uuid, (std::time::Instant, crate::models::auth::AuthProfile)>>,
     pub supabase: crate::clients::supabase::SupabaseClient,
+    pub paynow: crate::clients::paynow::PaynowClient,
     pub settings: Settings,
 }
 
@@ -25,6 +26,7 @@ impl AppState {
 
     pub fn new(db: PgPool, settings: Settings) -> SharedState {
         let supabase = crate::clients::supabase::SupabaseClient::new(&settings);
-        Arc::new(Self { db, auth_cache: Default::default(), supabase, settings })
+        let paynow = crate::clients::paynow::PaynowClient::new(&settings.paynow_base_url);
+        Arc::new(Self { db, auth_cache: Default::default(), supabase, paynow, settings })
     }
 }
