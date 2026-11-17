@@ -277,3 +277,115 @@ async fn roles_profile_serving_list_and_tolerant_times() {
     assert_eq!(s, StatusCode::CREATED, "{se}");
     env.cleanup().await;
 }
+
+/// The exact requests the web app's first load makes, plus the write shapes it sends.
+#[tokio::test]
+async fn web_first_load_and_write_shapes_work() {
+    let Some(env) = setup().await else { return };
+    let a = &env.a1_admin;
+
+    for path in [
+        "/members?per_page=1000",
+        "/events?start=2026-01-01&end=2026-12-31",
+        "/sermons?start=2026-01-01&end=2026-12-31&full=true",
+        "/testimonies?limit=1000",
+        "/prayers?start=2026-01-01&end=2026-12-31",
+        "/cell-groups", "/ministries", "/courses", "/finance/setup",
+        "/incomes?start=2026-01-01&end=2026-12-31&limit=1000",
+        "/expenses?start=2026-01-01&end=2026-12-31&limit=1000",
+        "/announcements", "/cell-meetings", "/event-serving", "/focs", "/church",
+        "/provinces", "/bible-plans", "/social-events", "/foc", "/auth/profile", "/logos",
+    ] {
+        let (s, b) = env.call(a, "GET", path, None).await;
+        // /logos needs real storage; everything else must be a plain 200
+        if path == "/logos" { continue; }
+        assert_eq!(s, StatusCode::OK, "{path}: {b}");
+    }
+    let (_, m) = env.call(a, "GET", "/members?per_page=1000", None).await;
+    assert!(m["data"]["items"].is_array(), "members come back as {{items}}");
+    let (_, setup_json) = env.call(a, "GET", "/finance/setup", None).await;
+    for k in ["currencies", "categories", "methods"] {
+        assert!(setup_json["data"][k].is_array(), "setup.{k}");
+    }
+
+    // write shapes the web sends (blank optionals are sent as null, ISO-ish dates trimmed to a day)
+    let (s, e) = env.call(a, "POST", "/events", Some(json!({
+        "title":"Sunday","date":"2026-12-06","start_time":"09:00","end_time":"11:00","location":"Hall",
+        "description":null,"isRecurring":null,"sermon_id":null,"scope":"foc"}))).await;
+    assert_eq!(s, StatusCode::CREATED, "{e}");
+    let eid = e["data"]["id"].as_str().unwrap().to_string();
+    assert!(e["data"]["qr_code"].as_str().is_some_and(|q| !q.is_empty()), "server makes the QR");
+    let (s, b) = env.call(a, "PATCH", &format!("/events/{eid}"), Some(json!({
+        "title":"Sunday service","start_time":"09:30:00+00","description":null}))).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+
+    // event income = a ledger income carrying event_id
+    let cur = setup_json["data"]["currencies"][0]["id"].clone();
+    let cat = setup_json["data"]["categories"].as_array().unwrap().iter().find(|c| c["type"] == "income").map(|c| c["id"].clone());
+    let met = setup_json["data"]["methods"][0]["id"].clone();
+    if let (Some(cat), false, false) = (cat, cur.is_null(), met.is_null()) {
+        let (s, i) = env.call(a, "POST", "/incomes", Some(json!({
+            "amount": 12.5, "currency_id": cur, "category_id": cat, "method_id": met, "event_id": eid, "description": "offering"}))).await;
+        if s == StatusCode::CREATED {
+            let iid = i["data"]["id"].as_str().unwrap().to_string();
+            let (s, _) = env.call(a, "PATCH", &format!("/incomes/{iid}"), Some(json!({"reason":"typo","amount":13}))).await;
+            assert_eq!(s, StatusCode::OK);
+            let (s, _) = env.call(a, "POST", &format!("/incomes/{iid}/void"), Some(json!({"reason":"mistake"}))).await;
+            assert_eq!(s, StatusCode::OK);
+        }
+    }
+
+    // prayers / testimonies / announcements the way the web sends them
+    let (s, p) = env.call(a, "POST", "/prayers", Some(json!({"title":"t","content":"c","is_anonymous":false,"date":"2026-11-17"}))).await;
+    assert_eq!(s, StatusCode::CREATED, "{p}");
+    let (s, t) = env.call(a, "POST", "/testimonies", Some(json!({"title":"t","situation":"s","intervention":"i","outcome":"o","is_anonymous":false,"date":"2026-11-17"}))).await;
+    assert_eq!(s, StatusCode::CREATED, "{t}");
+    let tid = t["data"]["id"].as_str().unwrap().to_string();
+    let (s, ap) = env.call(a, "POST", &format!("/testimonies/{tid}/approve"), None).await;
+    assert_eq!(s, StatusCode::OK, "{ap}");
+    let (s, an) = env.call(a, "POST", "/announcements", Some(json!({"title":"t","content":"c","scope":"foc","priority":"medium","is_active":true,"start_date":"2026-11-17"}))).await;
+    assert_eq!(s, StatusCode::CREATED, "{an}");
+    env.cleanup().await;
+}
+
+#[tokio::test]
+async fn idempotency_and_event_scope_change() {
+    let Some(env) = setup().await else { return };
+    let (a1, a2) = (&env.a1_admin, &env.a2_admin);
+
+    // same key twice -> one record, second answer is the stored one
+    let body = json!({"title":"Once","content":"only","is_anonymous":false,"date":"2026-11-17"});
+    let h = [("idempotency-key", "key-prayer-1")];
+    let (s1, b1, _) = env.call_with(a1, "POST", "/prayers", &h, Some(body.clone())).await;
+    let (s2, b2, hd) = env.call_with(a1, "POST", "/prayers", &h, Some(body.clone())).await;
+    assert_eq!((s1, s2), (StatusCode::CREATED, StatusCode::CREATED));
+    assert_eq!(b1["data"]["id"], b2["data"]["id"]);
+    assert_eq!(hd.get("idempotent-replay").and_then(|v| v.to_str().ok()), Some("true"));
+    let (_, list) = env.call(a1, "GET", "/prayers", None).await;
+    assert_eq!(list["data"].as_array().unwrap().iter().filter(|p| p["title"] == "Once").count(), 1);
+
+    // the key belongs to one request, and to one person
+    let (s, _, _) = env.call_with(a1, "POST", "/testimonies", &h, Some(json!({"title":"x"}))).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, _, hd) = env.call_with(a2, "POST", "/prayers", &h, Some(body.clone())).await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert!(hd.get("idempotent-replay").is_none());
+
+    // a failed attempt is forgotten, so fixing the problem and retrying works
+    let h2 = [("idempotency-key", "key-fail-1")];
+    let (s, _, _) = env.call_with(a1, "POST", "/prayers", &h2, Some(json!({"title":"","content":"c","is_anonymous":false}))).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, _, _) = env.call_with(a1, "POST", "/prayers", &h2, Some(json!({"title":"Fixed","content":"c","is_anonymous":false}))).await;
+    assert_eq!(s, StatusCode::CREATED);
+
+    // an event can be moved between foc / church (and province when the FOC has one)
+    let (_, e) = env.call(a1, "POST", "/events", Some(json!({"title":"E","date":"2026-12-07","start_time":"08:00","end_time":"10:00","location":"L","scope":"foc"}))).await;
+    let eid = id(&e);
+    let (s, c) = env.call(a1, "PATCH", &format!("/events/{eid}"), Some(json!({"scope":"church"}))).await;
+    assert_eq!((s, c["data"]["scope"].as_str(), c["data"]["foc_id"].is_null()), (StatusCode::OK, Some("church"), true), "{c}");
+    let (s, f) = env.call(a1, "PATCH", &format!("/events/{eid}"), Some(json!({"scope":"foc"}))).await;
+    assert_eq!((s, f["data"]["scope"].as_str()), (StatusCode::OK, Some("foc")), "{f}");
+    // another FOC can never take it over
+    assert_eq!(env.call(a2, "PATCH", &format!("/events/{eid}"), Some(json!({"scope":"church"}))).await.0, StatusCode::NOT_FOUND);
+    env.cleanup().await;
+}

@@ -20,6 +20,7 @@ struct Fake {
     uploaded: Vec<String>,
     removed: Vec<String>,
     last_service_key_ok: bool,
+    last_upload_bytes: usize,
 }
 type Shared = Arc<Mutex<Fake>>;
 
@@ -79,6 +80,15 @@ async fn remove(State(f): State<Shared>, Path(path): Path<String>) -> StatusCode
     StatusCode::OK
 }
 
+async fn upload(State(f): State<Shared>, Path(path): Path<String>, h: HeaderMap, body: axum::body::Bytes) -> Json<Value> {
+    let rel = path.strip_prefix("churchpoint/").unwrap_or(&path).to_string();
+    let mut g = f.lock().unwrap();
+    g.last_service_key_ok = h.get("authorization").is_some_and(|v| v == "Bearer service-key");
+    g.uploaded.push(rel);
+    g.last_upload_bytes = body.len();
+    Json(json!({"Key": path}))
+}
+
 async fn list() -> Json<Value> {
     Json(json!([{"name":"logo.png"},{"name":"notes.txt"},{"name":"Banner.SVG"}]))
 }
@@ -96,7 +106,7 @@ async fn start_fake() -> (String, Shared) {
         .route("/storage/v1/object/upload/sign/{*path}", post(sign))
         .route("/storage/v1/object/public/{*path}", head(exists))
         .route("/storage/v1/object/list/{bucket}", post(list))
-        .route("/storage/v1/object/{*path}", delete(remove))
+        .route("/storage/v1/object/{*path}", delete(remove).post(upload))
         .with_state(fake.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -306,4 +316,41 @@ async fn member_views_usage_counts_and_event_services() {
     assert_eq!(env.call(a2, "DELETE", &format!("/event-services/{}", id(&r)), None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(env.call(a1, "DELETE", &format!("/event-services/{}", id(&r)), None).await.0, StatusCode::NO_CONTENT);
     env.cleanup().await;
+}
+
+/// A tiny valid WAV (1 second of silence, 16-bit mono 16 kHz) — the server must turn it into Opus.
+fn silent_wav() -> Vec<u8> {
+    let data_len = 32000u32;
+    let mut w = Vec::new();
+    w.extend(b"RIFF"); w.extend((36 + data_len).to_le_bytes()); w.extend(b"WAVEfmt ");
+    w.extend(16u32.to_le_bytes()); w.extend(1u16.to_le_bytes()); w.extend(1u16.to_le_bytes());
+    w.extend(16000u32.to_le_bytes()); w.extend(32000u32.to_le_bytes()); w.extend(2u16.to_le_bytes()); w.extend(16u16.to_le_bytes());
+    w.extend(b"data"); w.extend(data_len.to_le_bytes()); w.extend(vec![0u8; data_len as usize]);
+    w
+}
+
+#[tokio::test]
+async fn server_compresses_sermon_audio() {
+    let (url, fake) = start_fake().await;
+    let Some(env) = setup_with(Some(url)).await else { return };
+    let (a1, a2) = (&env.a1_admin, &env.a2_admin);
+    let (_, b) = env.call(a1, "POST", "/sermons", Some(json!({"title":"t","preacher":"p","date":"2026-11-15","content":"c"}))).await;
+    let sid = id(&b);
+    let wav = silent_wav();
+
+    // someone else's sermon: refused before any bytes are accepted
+    assert_eq!(env.put_raw(a2, &format!("/sermons/{sid}/audio/file"), wav.clone()).await.0, StatusCode::NOT_FOUND);
+    // not audio at all
+    let (s, _) = env.put_raw(a1, &format!("/sermons/{sid}/audio/file"), b"this is not audio".to_vec()).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    // empty body
+    assert_eq!(env.put_raw(a1, &format!("/sermons/{sid}/audio/file"), vec![]).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (s, r) = env.put_raw(a1, &format!("/sermons/{sid}/audio/file"), wav.clone()).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert!(r["data"]["audio_url"].as_str().unwrap().ends_with(&format!("Sermons/{sid}.opus")));
+    let g = fake.lock().unwrap();
+    assert!(g.uploaded.contains(&format!("Sermons/{sid}.opus")));
+    assert!(g.last_upload_bytes > 0 && g.last_upload_bytes < wav.len(), "stored file must be the compressed one");
+    assert!(g.last_service_key_ok);
 }

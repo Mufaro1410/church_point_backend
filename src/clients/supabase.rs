@@ -151,6 +151,18 @@ impl SupabaseClient {
         }
     }
 
+    /// Axum puts the (already compressed) file into storage itself, using the server key.
+    pub async fn upload_object(&self, path: &str, body: Vec<u8>, content_type: &str) -> AppResult<()> {
+        let r = self.as_service(self.req(Method::POST, &format!("/storage/v1/object/{BUCKET}/{path}"))?)?
+            .header("x-upsert", "true")
+            .header("content-type", content_type)
+            .body(body);
+        match self.send(r).await? {
+            (200..=299, _) => Ok(()),
+            (s, b) => Err(Self::upstream(s, &b)),
+        }
+    }
+
     pub async fn object_exists(&self, path: &str) -> AppResult<bool> {
         let r = self.http.head(self.public_url(path)?);
         Ok(matches!(r.send().await.map(|r| r.status().as_u16()), Ok(200..=299)))

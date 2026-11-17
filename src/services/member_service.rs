@@ -135,7 +135,9 @@ pub async fn release(state: &SharedState, auth: &AuthUser, id: Uuid, req: Releas
     if !RELEASE_STATUSES.contains(&req.status.as_str()) {
         return Err(AppError::Validation("status must be approved, rejected, pending or transfer_requested.".into()));
     }
-    match repo::release(&state.db, id, foc_id, &req.status).await? {
+    let changed = repo::release(&state.db, id, foc_id, &req.status).await?;
+    state.clear_auth_cache();
+    match changed {
         0 => Err(MemberError::NotFound.into()),
         _ => Ok(()),
     }
@@ -149,7 +151,9 @@ pub async fn reject(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult
 pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<()> {
     let foc_id = auth.require_foc()?;
     forbid_self(auth, id)?;
-    match repo::soft_delete(&state.db, id, foc_id).await? {
+    let changed = repo::soft_delete(&state.db, id, foc_id).await?;
+    state.clear_auth_cache();
+    match changed {
         0 => Err(MemberError::NotFound.into()),
         _ => Ok(()),
     }
@@ -162,8 +166,9 @@ pub async fn set_role(state: &SharedState, auth: &AuthUser, id: Uuid, role: &str
     }
     forbid_self(auth, id)?;
     get(state, auth, id).await?;
-    repo::set_role(&state.db, id, foc_id, role)
-        .await?
+    let updated = repo::set_role(&state.db, id, foc_id, role).await?;
+    state.clear_auth_cache();
+    updated
         .ok_or_else(|| AppError::Validation("That person has no login yet, so they cannot be given this role.".into()))
 }
 

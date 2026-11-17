@@ -2,6 +2,13 @@ use axum::{Router, middleware::from_fn, routing::get};
 
 use crate::{handlers::sermon, middleware::authorization::require_roles, state::SharedState};
 
+/// Audio uploads are big, so they live apart from the normal 1 MB request limit (see routes/mod.rs).
+pub fn upload_routes() -> Router<SharedState> {
+    Router::new()
+        .route("/sermons/{id}/audio/file", axum::routing::put(sermon::audio_file))
+        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)))
+}
+
 pub fn routes() -> Router<SharedState> {
     let reads = Router::new()
         .route("/sermons", get(sermon::list))

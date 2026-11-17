@@ -65,3 +65,8 @@ pub async fn audio_confirm(State(s): State<SharedState>, Extension(a): Extension
 pub async fn audio_delete(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, ApiPath(id): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
     Ok(Json(ApiResponse::ok(sermon_service::audio_delete(&s, &a, id).await?)))
 }
+
+/// Raw audio body in; compressed, stored and linked sermon out.
+pub async fn audio_file(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, ApiPath(id): ApiPath<Uuid>, body: axum::body::Body) -> AppResult<Reply<Value>> {
+    Ok(Json(ApiResponse::ok(sermon_service::audio_from_body(&s, &a, id, body).await?)))
+}

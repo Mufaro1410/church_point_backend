@@ -153,6 +153,8 @@ pub struct UpdateEventRequest {
     #[serde(default, deserialize_with = "double_option")]
     pub sermon_id: Option<Option<Uuid>>,
     pub manual_stats: Option<ManualStatsPatch>,
+    /// Move the event between church / province / FOC. The server recomputes who owns it.
+    pub scope: Option<Scope>,
 }
 
 /// A fully validated event ready to insert. Built by the service, used by the repository.

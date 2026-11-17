@@ -39,6 +39,8 @@ pub enum AppError {
     #[error("{0}")]
     Validation(String),
     #[error("{0}")]
+    Conflict(String),
+    #[error("{0}")]
     Upstream(String),
     #[error("{0} is not configured on the server.")]
     NotConfigured(&'static str),
@@ -83,6 +85,7 @@ impl AppError {
                 Some((s, c, m)) => (s, c, Some(m)),
                 None => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", None),
             },
+            AppError::Conflict(_) => (StatusCode::CONFLICT, "REQUEST_IN_PROGRESS", None),
             AppError::Upstream(_) => (StatusCode::BAD_GATEWAY, "UPSTREAM_ERROR", Some("A supporting service is not responding. Try again.")),
             AppError::NotConfigured(_) => (StatusCode::SERVICE_UNAVAILABLE, "NOT_CONFIGURED", None),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", None),

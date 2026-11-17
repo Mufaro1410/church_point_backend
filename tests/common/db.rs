@@ -239,6 +239,10 @@ pub async fn setup_with(mock_supabase: Option<String>) -> Option<Env> {
         port: 0,
         database_url: String::new(),
         db_max_connections: 5,
+        db_min_connections: 0,
+        auth_cache_secs: 0,
+        ffmpeg_bin: "ffmpeg".into(),
+        audio_max_mb: 5,
         supabase_jwt_secret: SECRET.into(),
         supabase_url: Some(mock_supabase.clone().unwrap_or_else(|| SUPABASE_URL.into())),
         supabase_anon_key: mock_supabase.as_ref().map(|_| "anon-key".to_string()),
@@ -271,6 +275,33 @@ impl Env {
         let status = res.status();
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    /// Like `call`, with extra request headers; also returns the response headers.
+    pub async fn call_with(&self, who: &Actor, method: &str, uri: &str, headers: &[(&str, &str)], body: Option<Value>) -> (StatusCode, Value, axum::http::HeaderMap) {
+        let mut req = Request::builder().method(method).uri(format!("/api/v1{uri}"))
+            .header(header::AUTHORIZATION, format!("Bearer {}", who.token));
+        for (k, v) in headers { req = req.header(*k, *v); }
+        let body = match body {
+            Some(b) => { req = req.header(header::CONTENT_TYPE, "application/json"); Body::from(b.to_string()) }
+            None => Body::empty(),
+        };
+        let res = self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let (status, hdrs) = (res.status(), res.headers().clone());
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), hdrs)
+    }
+
+    /// Sends raw bytes (an audio file) as the body.
+    pub async fn put_raw(&self, who: &Actor, uri: &str, bytes: Vec<u8>) -> (StatusCode, Value) {
+        let req = Request::builder().method("PUT").uri(format!("/api/v1{uri}"))
+            .header(header::AUTHORIZATION, format!("Bearer {}", who.token))
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(bytes)).unwrap();
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let b = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&b).unwrap_or(Value::Null))
     }
 
     /// Runs SQL AS a Supabase API role (what a browser/mobile client with the anon key or a login can do),

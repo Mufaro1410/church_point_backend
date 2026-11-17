@@ -134,3 +134,47 @@ pub async fn audio_delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> App
     state.supabase.remove_object(&audio_path(id)).await?;
     sermon_repository::set_audio(&state.db, id, foc_id, None).await?.ok_or_else(|| SermonError::NotFound.into())
 }
+
+/// The simple way: the browser sends the raw audio file here; Axum compresses it, stores it and links it.
+pub async fn audio_from_body(state: &SharedState, auth: &AuthUser, id: Uuid, body: axum::body::Body) -> AppResult<Value> {
+    use http_body_util::BodyExt;
+    use tokio::io::AsyncWriteExt;
+
+    let foc_id = auth.require_foc()?;
+    get(state, auth, id).await?; // must be your sermon, before we accept any bytes
+
+    let tmp = std::env::temp_dir();
+    let (input, output) = (tmp.join(format!("cp-{}.in", Uuid::new_v4())), tmp.join(format!("cp-{}.opus", Uuid::new_v4())));
+    let max = state.settings.audio_max_mb * 1024 * 1024;
+
+    let result: AppResult<Value> = async {
+        let mut file = tokio::fs::File::create(&input).await.map_err(|e| crate::errors::AppError::Internal(format!("temp file: {e}")))?;
+        let (mut body, mut total) = (body, 0usize);
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| crate::errors::AppError::Validation(format!("The audio file is too large (limit {} MB).", state.settings.audio_max_mb)))?;
+            if let Some(chunk) = frame.data_ref() {
+                total += chunk.len();
+                if total > max {
+                    return Err(crate::errors::AppError::Validation(format!("The audio file is too large (limit {} MB).", state.settings.audio_max_mb)));
+                }
+                file.write_all(chunk).await.map_err(|e| crate::errors::AppError::Internal(format!("temp file: {e}")))?;
+            }
+        }
+        file.flush().await.ok();
+        drop(file);
+        if total == 0 {
+            return Err(crate::errors::AppError::Validation("No audio file was received.".into()));
+        }
+
+        crate::utils::audio::compress_to_opus(&state.settings.ffmpeg_bin, &input, &output).await?;
+        let bytes = tokio::fs::read(&output).await.map_err(|e| crate::errors::AppError::Internal(format!("read compressed audio: {e}")))?;
+        state.supabase.upload_object(&audio_path(id), bytes, "audio/ogg; codecs=opus").await?;
+        let url = expected_audio_url(state, id)?;
+        sermon_repository::set_audio(&state.db, id, foc_id, Some(&url)).await?.ok_or_else(|| SermonError::NotFound.into())
+    }
+    .await;
+
+    let _ = tokio::fs::remove_file(&input).await;
+    let _ = tokio::fs::remove_file(&output).await;
+    result
+}

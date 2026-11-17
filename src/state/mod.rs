@@ -6,6 +6,8 @@ use crate::config::Settings;
 
 pub struct AppState {
     pub db: PgPool,
+    /// Who a token belongs to, remembered for a few seconds (see `auth_cache_secs`).
+    pub auth_cache: std::sync::Mutex<std::collections::HashMap<uuid::Uuid, (std::time::Instant, crate::models::auth::AuthProfile)>>,
     pub supabase: crate::clients::supabase::SupabaseClient,
     pub settings: Settings,
 }
@@ -14,8 +16,15 @@ pub struct AppState {
 pub type SharedState = Arc<AppState>;
 
 impl AppState {
+    /// Call after anything that changes who someone is (role, church status, removal).
+    pub fn clear_auth_cache(&self) {
+        if let Ok(mut c) = self.auth_cache.lock() {
+            c.clear();
+        }
+    }
+
     pub fn new(db: PgPool, settings: Settings) -> SharedState {
         let supabase = crate::clients::supabase::SupabaseClient::new(&settings);
-        Arc::new(Self { db, supabase, settings })
+        Arc::new(Self { db, auth_cache: Default::default(), supabase, settings })
     }
 }

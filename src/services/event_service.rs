@@ -106,7 +106,8 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut req: Upd
         check_sermon(state, sermon_id, foc_id).await?;
     }
 
-    match event_repository::update(&state.db, id, auth, &req).await? {
+    let owner = req.scope.map(|s| scope::ownership(s, auth)).transpose()?;
+    match event_repository::update(&state.db, id, auth, &req, owner.as_ref()).await? {
         Some(event) => Ok(event),
         None => Err(not_manageable(state, auth, id).await?),
     }

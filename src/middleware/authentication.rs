@@ -82,9 +82,31 @@ pub async fn authenticate(
 
     let claims = jwt::verify_supabase_token(token, &state.settings.supabase_jwt_secret)?;
 
-    let profile = user_repository::find_auth_profile(&state.db, claims.sub)
-        .await?
-        .ok_or(AuthError::NoProfile)?;
+    let ttl = std::time::Duration::from_secs(state.settings.auth_cache_secs);
+    let cached = if ttl.is_zero() {
+        None
+    } else {
+        state.auth_cache.lock().ok().and_then(|c| {
+            c.get(&claims.sub).filter(|(at, _)| at.elapsed() < ttl).map(|(_, p)| p.clone())
+        })
+    };
+    let profile = match cached {
+        Some(p) => p,
+        None => {
+            let p = user_repository::find_auth_profile(&state.db, claims.sub)
+                .await?
+                .ok_or(AuthError::NoProfile)?;
+            if !ttl.is_zero() {
+                if let Ok(mut c) = state.auth_cache.lock() {
+                    if c.len() > 5000 {
+                        c.clear();
+                    }
+                    c.insert(claims.sub, (std::time::Instant::now(), p.clone()));
+                }
+            }
+            p
+        }
+    };
 
     req.extensions_mut().insert(AuthUser {
         user_id: claims.sub,

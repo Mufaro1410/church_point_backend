@@ -29,7 +29,7 @@ pub async fn set_status(state: &SharedState, auth: &AuthUser, id: Uuid, status: 
     if !STATUSES.contains(&status.as_str()) {
         return Err(AppError::Validation("status must be pending, approved or suspended.".into()));
     }
-    platform_repository::set_status(&state.db, id, &status)
-        .await?
-        .ok_or_else(|| FocError::NotFound.into())
+    let r = platform_repository::set_status(&state.db, id, &status).await?;
+    state.clear_auth_cache();
+    r.ok_or_else(|| FocError::NotFound.into())
 }

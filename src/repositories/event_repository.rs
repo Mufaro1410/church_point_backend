@@ -88,8 +88,16 @@ pub async fn update(
     id: Uuid,
     auth: &AuthUser,
     req: &UpdateEventRequest,
+    owner: Option<&crate::services::scope::Ownership>,
 ) -> Result<Option<Value>, sqlx::Error> {
     let mut qb = QueryBuilder::<Postgres>::new("UPDATE events SET updated_at = now()");
+
+    if let Some(o) = owner {
+        qb.push(", scope = ").push_bind(o.scope);
+        qb.push(", church_id = ").push_bind(o.church_id);
+        qb.push(", province_id = ").push_bind(o.province_id);
+        qb.push(", foc_id = ").push_bind(o.foc_id);
+    }
 
     if let Some(v) = &req.title {
         qb.push(", title = ").push_bind(v);
