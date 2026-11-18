@@ -17,6 +17,7 @@ pub mod events;
 pub mod finance;
 pub mod foc;
 pub mod members;
+pub mod mobile;
 pub mod org;
 pub mod payments;
 pub mod platform;
@@ -50,6 +51,7 @@ pub fn build(state: SharedState) -> Router {
         .merge(testimonies::routes())
         .merge(announcements::routes())
         .merge(payments::routes())
+        .merge(mobile::routes())
         .route_layer(from_fn_with_state(state.clone(), idempotent))
         .route_layer(from_fn_with_state(state.clone(), authenticate));
 
@@ -69,7 +71,7 @@ pub fn build(state: SharedState) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/ready", get(health::ready))
-        .nest("/api/v1", api.merge(token_only).merge(auth::public_routes()).merge(payments::public_routes()))
+        .nest("/api/v1", api.merge(token_only).merge(auth::public_routes()).merge(payments::public_routes()).merge(mobile::public_routes()))
         .with_state(state.clone())
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .merge(upload)

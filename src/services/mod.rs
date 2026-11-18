@@ -12,3 +12,4 @@ pub mod prayer_service;
 pub mod scope;
 pub mod sermon_service;
 pub mod testimony_service;
+pub mod mobile_service;

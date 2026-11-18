@@ -25,3 +25,4 @@ impl<T: Serialize> ApiResponse<T> {
     pub fn ok(data: T) -> Self { Self { success: true, data } }
 }
 pub mod payment;
+pub mod mobile;

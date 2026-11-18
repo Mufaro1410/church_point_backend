@@ -53,6 +53,7 @@ mod tests {
             province_id: province.then(Uuid::new_v4),
             foc_status: Some("approved".into()),
             role: Some("admin".into()),
+            member_status: None,
         }
     }
 

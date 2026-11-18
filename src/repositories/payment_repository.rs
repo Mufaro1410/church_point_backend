@@ -128,3 +128,8 @@ pub async fn list(pool: &PgPool, foc: Uuid, status: Option<&str>, limit: i64) ->
     sqlx::query_scalar(&format!("{VIEW} WHERE p.foc_id = $1 AND ($2::text IS NULL OR p.status = $2) ORDER BY p.created_at DESC LIMIT $3"))
         .bind(foc).bind(status).bind(limit).fetch_all(pool).await
 }
+
+pub async fn list_for_member(pool: &PgPool, member: Uuid, limit: i64) -> Result<Vec<Value>, sqlx::Error> {
+    sqlx::query_scalar(&format!("{VIEW} WHERE p.member_id = $1 ORDER BY p.created_at DESC LIMIT $2"))
+        .bind(member).bind(limit).fetch_all(pool).await
+}

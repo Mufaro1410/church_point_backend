@@ -354,3 +354,38 @@ async fn server_compresses_sermon_audio() {
     assert!(g.last_upload_bytes > 0 && g.last_upload_bytes < wav.len(), "stored file must be the compressed one");
     assert!(g.last_service_key_ok);
 }
+
+#[tokio::test]
+async fn member_signup_creates_a_pending_profile() {
+    let (url, fake) = start_fake().await;
+    let Some(env) = setup_with(Some(url)).await else { return };
+    let body = |email: &str| json!({
+        "email": email, "password": "goodpass1", "first_name": "Nia", "last_name": "Moyo", "gender": "F",
+        "phone": "0771234567", "foc_id": uid(common::db::FOC_A1), "accepted_terms": true,
+    });
+
+    // checked before any login is created
+    let mut no_terms = body("nia@x.com");
+    no_terms["accepted_terms"] = json!(false);
+    assert_eq!(post_public(&env, "/auth/register-member", no_terms).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(post_public(&env, "/auth/register-member", body("ada@x.com")).await.0, StatusCode::CONFLICT);
+    assert!(fake.lock().unwrap().signups.is_empty());
+
+    sqlx::query("INSERT INTO auth.users(id, email) VALUES ($1,$2)").bind(uid(7000)).bind("nia@x.com").execute(&env.pool).await.unwrap();
+    let (st, r) = post_public(&env, "/auth/register-member", body("Nia@X.com")).await;
+    assert_eq!(st, StatusCode::CREATED, "{r}");
+    let (status, role, foc, terms): (String, String, uuid::Uuid, bool) = sqlx::query_as(
+        "SELECT status, role, foc_id, terms_accepted_at IS NOT NULL FROM member_profiles WHERE user_id = $1")
+        .bind(uid(7000)).fetch_one(&env.pool).await.unwrap();
+    assert_eq!((status.as_str(), role.as_str(), foc, terms), ("pending", "member", uid(common::db::FOC_A1), true));
+
+    // a bad profile (database refuses) removes the login again
+    let mut bad = body("oops@x.com");
+    bad["gender"] = json!("F");
+    bad["phone"] = json!("   ");
+    sqlx::query("INSERT INTO auth.users(id, email) VALUES ($1,$2)").bind(uid(7000)).bind("oops@x.com").execute(&env.pool).await.ok();
+    let (st, _) = post_public(&env, "/auth/register-member", bad).await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(!fake.lock().unwrap().deleted_users.is_empty(), "the half-made login must be removed");
+    env.cleanup().await;
+}

@@ -17,7 +17,7 @@ pub async fn find_auth_profile(
     auth_user_id: Uuid,
 ) -> Result<Option<AuthProfile>, sqlx::Error> {
     sqlx::query_as::<_, AuthProfile>(
-        "SELECT m.id AS member_id, m.foc_id, f.church_id, f.province_id, f.status AS foc_status, m.role::text AS role
+        "SELECT m.id AS member_id, m.foc_id, f.church_id, f.province_id, f.status AS foc_status, m.role::text AS role, m.status::text AS member_status
          FROM member_profiles m
          LEFT JOIN foc_profile f ON f.id = m.foc_id
          WHERE m.user_id = $1 AND m.deleted_at IS NULL",

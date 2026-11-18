@@ -68,11 +68,11 @@ pub const FOC_A1: u32 = 11;
 pub const FOC_A2: u32 = 12;
 pub const FOC_B1: u32 = 13;
 // members (member id = n, auth user id = n + 100)
-const A1_ADMIN: u32 = 21;
-const A1_ADMIN2: u32 = 22;
-const A1_MEMBER: u32 = 23;
-const A2_ADMIN: u32 = 24;
-const B1_ADMIN: u32 = 25;
+pub const A1_ADMIN: u32 = 21;
+pub const A1_ADMIN2: u32 = 22;
+pub const A1_MEMBER: u32 = 23;
+pub const A2_ADMIN: u32 = 24;
+pub const B1_ADMIN: u32 = 25;
 
 pub fn token_for(user_id: Uuid) -> String {
     let claims = json!({ "sub": user_id, "aud": "authenticated", "exp": chrono::Utc::now().timestamp() + 3600 });

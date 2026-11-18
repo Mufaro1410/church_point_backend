@@ -25,6 +25,8 @@ pub struct AuthUser {
     pub province_id: Option<Uuid>,
     pub foc_status: Option<String>,
     pub role: Option<String>,
+    /// pending / approved / rejected / transfer_requested
+    pub member_status: Option<String>,
 }
 
 impl AuthUser {
@@ -116,6 +118,7 @@ pub async fn authenticate(
         province_id: profile.province_id,
         foc_status: profile.foc_status,
         role: profile.role,
+        member_status: profile.member_status,
     });
 
     Ok(next.run(req).await)

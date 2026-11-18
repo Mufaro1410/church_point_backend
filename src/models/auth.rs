@@ -9,6 +9,7 @@ pub struct AuthProfile {
     pub province_id: Option<Uuid>,
     pub foc_status: Option<String>,
     pub role: Option<String>,
+    pub member_status: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
