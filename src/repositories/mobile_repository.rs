@@ -141,6 +141,11 @@ pub async fn merge_progress(pool: &PgPool, member: Uuid, plan: Uuid, progress: &
     ).bind(member).bind(plan).bind(progress).fetch_one(pool).await
 }
 
+pub async fn progress_for(pool: &PgPool, member: Uuid, plan: Uuid) -> R<Option<Value>> {
+    sqlx::query_scalar("SELECT to_jsonb(p) FROM bible_reading_progress p WHERE p.profile_id = $1 AND p.plan_id = $2")
+        .bind(member).bind(plan).fetch_optional(pool).await
+}
+
 pub async fn plan_exists(pool: &PgPool, plan: Uuid) -> R<bool> {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bible_reading_plans WHERE id = $1 AND deleted_at IS NULL)").bind(plan).fetch_one(pool).await
 }

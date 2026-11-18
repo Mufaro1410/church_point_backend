@@ -102,6 +102,9 @@ async fn start_fake() -> (String, Shared) {
         .route("/auth/v1/signup", post(signup))
         .route("/auth/v1/logout", post(|| async { StatusCode::NO_CONTENT }))
         .route("/auth/v1/recover", post(|| async { Json(json!({})) }))
+        .route("/auth/v1/user", axum::routing::put(|h: HeaderMap, Json(b): Json<Value>| async move {
+            if h.get("authorization").is_some() && b["password"].is_string() { StatusCode::OK } else { StatusCode::BAD_REQUEST }
+        }))
         .route("/auth/v1/admin/users/{id}", delete(delete_user))
         .route("/storage/v1/object/upload/sign/{*path}", post(sign))
         .route("/storage/v1/object/public/{*path}", head(exists))
@@ -160,6 +163,8 @@ async fn login_refresh_logout_and_forgot_password() {
     assert_eq!(post_public(&env, "/auth/refresh", json!({"refresh_token":"x"})).await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(post_public(&env, "/auth/forgot-password", json!({"email":"nobody@x.com"})).await.0, StatusCode::NO_CONTENT);
     assert_eq!(post_public(&env, "/auth/forgot-password", json!({"email":"garbage"})).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(env.call(&env.a1_admin, "PUT", "/auth/password", Some(json!({"password":"brandnewpass1"}))).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(env.call(&env.a1_admin, "PUT", "/auth/password", Some(json!({"password":"short"}))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(env.call(&env.a1_admin, "POST", "/auth/logout", None).await.0, StatusCode::NO_CONTENT);
     env.cleanup().await;
 }

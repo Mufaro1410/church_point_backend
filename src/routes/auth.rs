@@ -3,7 +3,10 @@ use axum::{Router, routing::{get, post}};
 use crate::{handlers::auth, state::SharedState};
 
 pub fn routes() -> Router<SharedState> {
-    Router::new().route("/auth/me", get(auth::me)).route("/auth/profile", get(auth::profile))
+    Router::new()
+        .route("/auth/me", get(auth::me))
+        .route("/auth/profile", get(auth::profile))
+        .route("/auth/password", axum::routing::put(auth::change_password))
 }
 
 pub fn token_routes() -> Router<SharedState> {

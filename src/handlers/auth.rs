@@ -66,6 +66,18 @@ pub async fn forgot_password(State(s): State<SharedState>, ApiJson(r): ApiJson<F
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangePassword {
+    pub password: String,
+}
+
+pub async fn change_password(State(s): State<SharedState>, headers: HeaderMap, ApiJson(b): ApiJson<ChangePassword>) -> AppResult<StatusCode> {
+    let token = headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or_default();
+    auth_service::change_password(&s, token, &b.password).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn logout(State(s): State<SharedState>, headers: HeaderMap) -> AppResult<StatusCode> {
     let token = headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or_default();
     auth_service::logout(&s, token).await?;

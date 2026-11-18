@@ -48,7 +48,7 @@ pub fn routes() -> Router<SharedState> {
         .route("/m/testimonies/{id}", patch(testimony::update).delete(testimony::delete))
         .route("/m/testimonies/{id}/react", post(h::react_testimony))
         .route("/m/sermons/{id}/content", get(h::sermon_content))
-        .route("/m/bible-progress/{plan_id}", put(h::save_progress))
+        .route("/m/bible-progress/{plan_id}", get(h::get_progress).put(h::save_progress))
         .route("/m/family", get(h::my_family).post(h::add_family))
         .route("/m/family/{related_id}", delete(h::remove_family))
         .route("/m/members/search", get(h::search_members))

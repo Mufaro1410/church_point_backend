@@ -82,6 +82,10 @@ pub async fn sermon_content(State(s): St, Extension(a): Me, ApiPath(id): ApiPath
     Ok(ok(svc::sermon_content(&s, &a, id).await?))
 }
 
+pub async fn get_progress(State(s): St, Extension(a): Me, ApiPath(plan): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
+    Ok(ok(svc::get_progress(&s, &a, plan).await?))
+}
+
 pub async fn save_progress(State(s): St, Extension(a): Me, ApiPath(plan): ApiPath<Uuid>, ApiJson(b): ApiJson<ProgressRequest>) -> AppResult<Reply<Value>> {
     Ok(ok(svc::save_progress(&s, &a, plan, b).await?))
 }

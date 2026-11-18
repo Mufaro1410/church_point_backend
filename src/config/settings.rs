@@ -28,6 +28,8 @@ pub struct Settings {
     pub public_base_url: Option<String>,
     /// Paynow address (override only for testing).
     pub paynow_base_url: String,
+    /// Page the "reset password" email links to (optional; otherwise Supabase's own setting is used).
+    pub password_reset_redirect: Option<String>,
 }
 
 impl Settings {
@@ -51,6 +53,7 @@ impl Settings {
                 None => None,
             },
             public_base_url: env::var("PUBLIC_BASE_URL").ok().map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()),
+            password_reset_redirect: env::var("PASSWORD_RESET_REDIRECT_URL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             paynow_base_url: env::var("PAYNOW_BASE_URL").unwrap_or_else(|_| "https://www.paynow.co.zw".into()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_default()

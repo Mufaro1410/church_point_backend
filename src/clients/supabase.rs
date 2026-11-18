@@ -120,10 +120,25 @@ impl SupabaseClient {
         }
     }
 
-    pub async fn recover(&self, email: &str) -> AppResult<()> {
-        let r = self.as_anon(self.req(Method::POST, "/auth/v1/recover")?)?.json(&json!({ "email": email }));
+    pub async fn recover(&self, email: &str, redirect_to: Option<&str>) -> AppResult<()> {
+        let mut r = self.as_anon(self.req(Method::POST, "/auth/v1/recover")?)?.json(&json!({ "email": email }));
+        if let Some(url) = redirect_to {
+            r = r.query(&[("redirect_to", url)]);
+        }
         match self.send(r).await? {
             (200..=299, _) | (400..=429, _) => Ok(()), // never reveal whether the email exists
+            (s, b) => Err(Self::upstream(s, &b)),
+        }
+    }
+
+    /// Changes the signed-in person's password (their own token proves who they are).
+    pub async fn update_password(&self, access_token: &str, new_password: &str) -> AppResult<()> {
+        let r = self.as_anon(self.req(Method::PUT, "/auth/v1/user")?)?
+            .bearer_auth(access_token)
+            .json(&json!({ "password": new_password }));
+        match self.send(r).await? {
+            (200..=299, _) => Ok(()),
+            (400..=429, b) => Err(AppError::Validation(message(&b))),
             (s, b) => Err(Self::upstream(s, &b)),
         }
     }

@@ -25,6 +25,7 @@ pub fn test_app() -> Router {
         auth_cache_secs: 0,
         ffmpeg_bin: "ffmpeg".into(),
         payments_key: Some([7u8; 32]),
+        password_reset_redirect: None,
         public_base_url: Some("https://example.test".into()),
         paynow_base_url: "https://www.paynow.co.zw".into(),
         audio_max_mb: 5,

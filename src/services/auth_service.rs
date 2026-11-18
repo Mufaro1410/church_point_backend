@@ -110,6 +110,11 @@ pub async fn refresh(state: &SharedState, r: RefreshRequest) -> AppResult<Value>
     session_reply(state, state.supabase.refresh(&r.refresh_token).await?).await
 }
 
+pub async fn change_password(state: &SharedState, access_token: &str, new_password: &str) -> AppResult<()> {
+    password(new_password)?;
+    state.supabase.update_password(access_token, new_password).await
+}
+
 pub async fn logout(state: &SharedState, access_token: &str) -> AppResult<()> {
     state.supabase.logout(access_token).await
 }
@@ -117,7 +122,7 @@ pub async fn logout(state: &SharedState, access_token: &str) -> AppResult<()> {
 /// Always succeeds from the caller's view: never reveals whether an email has an account.
 pub async fn forgot_password(state: &SharedState, r: ForgotRequest) -> AppResult<()> {
     if let Ok(e) = email(&r.email) {
-        state.supabase.recover(&e).await?;
+        state.supabase.recover(&e, state.settings.password_reset_redirect.as_deref()).await?;
     }
     Ok(())
 }

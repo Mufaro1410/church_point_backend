@@ -13,7 +13,7 @@ use crate::{
     utils::dynamic::{self, Kind},
 };
 
-const RELATIONS: [&str; 7] = ["spouse", "parent", "child", "sibling", "grandparent", "grandchild", "relative"];
+const RELATIONS: [&str; 9] = ["spouse", "parent", "child", "sibling", "grandparent", "grandchild", "relative", "guardian", "other"];
 
 /// What a member may change about themselves. Church, role and status are never in here.
 const SELF_FIELDS: &[(&str, Kind)] = &[
@@ -212,6 +212,10 @@ pub async fn save_progress(state: &SharedState, auth: &AuthUser, plan: Uuid, r: 
         return Err(AppError::Validation("Unknown reading plan.".into()));
     }
     Ok(repo::merge_progress(&state.db, auth.member_id, plan, &r.progress).await?)
+}
+
+pub async fn get_progress(state: &SharedState, auth: &AuthUser, plan: Uuid) -> AppResult<Value> {
+    Ok(repo::progress_for(&state.db, auth.member_id, plan).await?.unwrap_or(Value::Null))
 }
 
 // ── family ──

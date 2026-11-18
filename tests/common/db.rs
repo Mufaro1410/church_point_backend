@@ -248,6 +248,7 @@ pub async fn setup_custom(mock_supabase: Option<String>, paynow: Option<String>)
         auth_cache_secs: 0,
         ffmpeg_bin: "ffmpeg".into(),
         payments_key: Some([7u8; 32]),
+        password_reset_redirect: None,
         public_base_url: Some("https://example.test".into()),
         paynow_base_url: paynow.unwrap_or_else(|| "https://www.paynow.co.zw".into()),
         audio_max_mb: 5,
