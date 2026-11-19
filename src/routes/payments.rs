@@ -2,7 +2,7 @@ use axum::{Router, middleware::from_fn, routing::{get, post}};
 
 use crate::{
     handlers::payment,
-    middleware::authorization::{ADMIN, require_roles},
+    middleware::authorization::require_perm,
     state::SharedState,
 };
 
@@ -11,7 +11,7 @@ pub fn routes() -> Router<SharedState> {
     let admin = Router::new()
         .route("/payments/settings", get(payment::get_settings).put(payment::put_settings))
         .route("/payments", get(payment::list))
-        .route_layer(from_fn(|req, next| require_roles(ADMIN, req, next)));
+        .route_layer(from_fn(|req, next| require_perm(&["payments"], req, next)));
 
     // Any signed-in member of the church can pay and check their own payment.
     let members = Router::new()

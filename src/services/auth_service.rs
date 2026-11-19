@@ -37,12 +37,24 @@ fn session_json(raw: &Value) -> Value {
     })
 }
 
+/// Admins can do everything in their church, so the app is told every permission; others get what their roles give.
+fn effective_permissions(role: &Option<String>, own: Vec<String>) -> Vec<String> {
+    if matches!(role.as_deref(), Some("admin" | "super_admin")) {
+        crate::models::rbac::AREAS.iter().flat_map(|a| {
+            let acts: &[&str] = if a.delete { &["view", "manage", "delete"] } else { &["view", "manage"] };
+            acts.iter().map(move |x| format!("{}.{x}", a.key))
+        }).collect()
+    } else {
+        own
+    }
+}
+
 async fn me(state: &SharedState, user_id: Uuid) -> AppResult<Value> {
     Ok(match user_repository::find_auth_profile(&state.db, user_id).await? {
         Some(p) => json!({
             "member_id": p.member_id, "foc_id": p.foc_id, "church_id": p.church_id,
             "province_id": p.province_id, "role": p.role, "foc_status": p.foc_status,
-            "member_status": p.member_status,
+            "member_status": p.member_status, "permissions": effective_permissions(&p.role, p.permissions),
         }),
         None => Value::Null,
     })

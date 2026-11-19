@@ -27,11 +27,17 @@ pub struct AuthUser {
     pub role: Option<String>,
     /// pending / approved / rejected / transfer_requested
     pub member_status: Option<String>,
+    pub permissions: Vec<String>,
 }
 
 impl AuthUser {
     pub fn is_admin(&self) -> bool {
         matches!(self.role.as_deref(), Some("admin" | "super_admin"))
+    }
+
+    /// Admins can do everything in their church; everyone else needs the permission from a custom role.
+    pub fn can(&self, permission: &str) -> bool {
+        self.is_admin() || self.permissions.iter().any(|p| p == permission)
     }
 
     pub fn is_super_admin(&self) -> bool {
@@ -119,6 +125,7 @@ pub async fn authenticate(
         foc_status: profile.foc_status,
         role: profile.role,
         member_status: profile.member_status,
+        permissions: profile.permissions,
     });
 
     Ok(next.run(req).await)

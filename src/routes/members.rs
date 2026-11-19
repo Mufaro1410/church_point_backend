@@ -6,7 +6,7 @@ use axum::{
 
 use crate::{
     handlers::member as h,
-    middleware::authorization::{ADMIN, require_roles},
+    middleware::authorization::require_perm,
     state::SharedState,
 };
 
@@ -24,5 +24,5 @@ pub fn routes() -> Router<SharedState> {
         .route("/members/{id}/attendance", get(h::attendance))
         .route("/members/{id}/activity", get(h::activity))
         .route("/family/{id}", delete(h::remove_family))
-        .route_layer(from_fn(|req, next| require_roles(ADMIN, req, next)))
+        .route_layer(from_fn(|req, next| require_perm(&["members"], req, next)))
 }

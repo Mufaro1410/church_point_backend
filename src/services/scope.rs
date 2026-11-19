@@ -54,6 +54,7 @@ mod tests {
             foc_status: Some("approved".into()),
             role: Some("admin".into()),
             member_status: None,
+            permissions: vec![],
         }
     }
 

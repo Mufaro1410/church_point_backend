@@ -2,7 +2,7 @@ use axum::{Router, middleware::from_fn, routing::{delete, get}};
 
 use crate::{
     handlers::org,
-    middleware::authorization::{ADMIN, require_roles},
+    middleware::authorization::require_perm,
     state::SharedState,
 };
 
@@ -13,6 +13,10 @@ pub fn routes() -> Router<SharedState> {
         .route("/cell-groups/{id}/meetings", get(org::list_meetings).post(org::create_meeting))
         .route("/cell-meetings", get(org::list_all_meetings))
         .route("/cell-meetings/{id}", delete(org::delete_meeting).patch(org::update_meeting))
-        .route("/dashboard", get(org::dashboard))
-        .route_layer(from_fn(|req, next| require_roles(ADMIN, req, next)))
+        .route_layer(from_fn(|req, next| require_perm(&["cell_groups"], req, next)))
+        .merge(
+            Router::new()
+                .route("/dashboard", get(org::dashboard))
+                .route_layer(from_fn(|req, next| require_perm(&["reports"], req, next))),
+        )
 }

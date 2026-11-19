@@ -1,19 +1,19 @@
 use axum::{Router, middleware::from_fn, routing::get};
 
-use crate::{handlers::sermon, middleware::authorization::require_roles, state::SharedState};
+use crate::{handlers::sermon, middleware::authorization::require_perm, state::SharedState};
 
 /// Audio uploads are big, so they live apart from the normal 1 MB request limit (see routes/mod.rs).
 pub fn upload_routes() -> Router<SharedState> {
     Router::new()
         .route("/sermons/{id}/audio/file", axum::routing::put(sermon::audio_file))
-        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)))
+        .route_layer(from_fn(|req, next| require_perm(&["sermons"], req, next)))
 }
 
 pub fn routes() -> Router<SharedState> {
     let reads = Router::new()
         .route("/sermons", get(sermon::list))
         .route("/sermons/{id}", get(sermon::get))
-        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
+        .route_layer(from_fn(|req, next| require_perm(&["sermons"], req, next)));
 
     // Creating, editing and deleting sermons: admins only.
     let writes = Router::new()
@@ -22,7 +22,7 @@ pub fn routes() -> Router<SharedState> {
         .route("/sermons/{id}/audio/upload-url", axum::routing::post(sermon::audio_upload_url))
         .route("/sermons/{id}/audio/confirm", axum::routing::post(sermon::audio_confirm))
         .route("/sermons/{id}/audio", axum::routing::delete(sermon::audio_delete))
-        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
+        .route_layer(from_fn(|req, next| require_perm(&["sermons"], req, next)));
 
     reads.merge(writes)
 }

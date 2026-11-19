@@ -22,6 +22,7 @@ pub struct MemberQuery {
     pub search: Option<String>,
     pub status: Option<String>,
     pub cell_group_id: Option<Uuid>,
+    pub age_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

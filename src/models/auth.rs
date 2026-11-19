@@ -10,6 +10,8 @@ pub struct AuthProfile {
     pub foc_status: Option<String>,
     pub role: Option<String>,
     pub member_status: Option<String>,
+    /// Permissions from the member's custom roles ("members.view", ...). Admins need none.
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]

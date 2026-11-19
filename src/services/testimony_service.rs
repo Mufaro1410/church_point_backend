@@ -92,7 +92,7 @@ pub async fn reject(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult
 /// The author, or an admin moderating.
 pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<()> {
     let foc_id = auth.require_foc()?;
-    match testimony_repository::delete(&state.db, id, foc_id, auth.member_id, auth.is_admin()).await? {
+    match testimony_repository::delete(&state.db, id, foc_id, auth.member_id, auth.can("testimonies.delete")).await? {
         0 => Err(why_failed(state, foc_id, id).await?),
         _ => Ok(()),
     }

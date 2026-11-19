@@ -51,6 +51,8 @@ pub async fn list(state: &SharedState, auth: &AuthUser, q: MemberQuery) -> AppRe
         status: q.status.filter(|s| !s.is_empty()),
         search: q.search.filter(|s| !s.trim().is_empty()).map(|s| like(&s)),
         cell_group_id: q.cell_group_id,
+        age_group_id: q.age_group_id,
+        scope: crate::services::rbac_service::members_scope(state, auth).await?,
     };
     let items = repo::list_json(&state.db, foc_id, &f, per_page, (page - 1) * per_page).await?;
     let total = repo::count_filtered(&state.db, foc_id, &f).await?;
@@ -59,6 +61,7 @@ pub async fn list(state: &SharedState, auth: &AuthUser, q: MemberQuery) -> AppRe
 
 pub async fn get(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<Value> {
     let foc_id = auth.require_foc()?;
+    crate::services::rbac_service::ensure_member_in_scope(state, auth, id).await?;
     repo::get_json(&state.db, id, foc_id).await?.ok_or_else(|| MemberError::NotFound.into())
 }
 
@@ -89,6 +92,9 @@ fn parse_fields(body: Map<String, Value>) -> AppResult<Vec<(&'static str, Val)>>
 }
 
 pub async fn create(state: &SharedState, auth: &AuthUser, body: Map<String, Value>) -> AppResult<Value> {
+    if crate::services::rbac_service::members_scope(state, auth).await?.is_some() {
+        return Err(crate::errors::AuthError::Forbidden.into());
+    }
     let foc_id = auth.require_foc()?;
     let vals = parse_fields(body)?;
     for required in ["first_name", "last_name", "gender", "phone"] {
@@ -101,6 +107,7 @@ pub async fn create(state: &SharedState, auth: &AuthUser, body: Map<String, Valu
 }
 
 pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, body: Map<String, Value>) -> AppResult<Value> {
+    crate::services::rbac_service::ensure_member_in_scope(state, auth, id).await?;
     let foc_id = auth.require_foc()?;
     let vals = parse_fields(body)?;
     if vals.is_empty() {
@@ -111,6 +118,7 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, body: Map<St
 }
 
 pub async fn set_status(state: &SharedState, auth: &AuthUser, id: Uuid, status: &str) -> AppResult<Value> {
+    crate::services::rbac_service::ensure_member_in_scope(state, auth, id).await?;
     let foc_id = auth.require_foc()?;
     if !SET_STATUSES.contains(&status) {
         return Err(AppError::Validation("status must be approved or pending.".into()));
@@ -130,6 +138,7 @@ pub async fn set_pending(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppR
 }
 
 pub async fn release(state: &SharedState, auth: &AuthUser, id: Uuid, req: ReleaseRequest) -> AppResult<()> {
+    crate::services::rbac_service::ensure_member_in_scope(state, auth, id).await?;
     let foc_id = auth.require_foc()?;
     forbid_self(auth, id)?;
     if !RELEASE_STATUSES.contains(&req.status.as_str()) {
@@ -149,6 +158,7 @@ pub async fn reject(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult
 }
 
 pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<()> {
+    crate::services::rbac_service::ensure_member_in_scope(state, auth, id).await?;
     let foc_id = auth.require_foc()?;
     forbid_self(auth, id)?;
     let changed = repo::soft_delete(&state.db, id, foc_id).await?;

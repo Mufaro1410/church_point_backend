@@ -67,7 +67,7 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut r: Updat
 /// The author, or an admin moderating.
 pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<()> {
     let foc_id = auth.require_foc()?;
-    match prayer_repository::delete(&state.db, id, foc_id, auth.member_id, auth.is_admin()).await? {
+    match prayer_repository::delete(&state.db, id, foc_id, auth.member_id, auth.can("prayers.delete")).await? {
         0 => Err(why_failed(state, foc_id, id).await?),
         _ => Ok(()),
     }

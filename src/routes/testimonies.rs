@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
 };
 
-use crate::{handlers::testimony, middleware::authorization::require_roles, state::SharedState};
+use crate::{handlers::testimony, middleware::authorization::require_perm, state::SharedState};
 
 pub fn routes() -> Router<SharedState> {
     // Authors (admins and cell leaders) read, create, edit and delete; the service enforces ownership.
@@ -14,13 +14,13 @@ pub fn routes() -> Router<SharedState> {
             "/testimonies/{id}",
             get(testimony::get).patch(testimony::update).delete(testimony::delete),
         )
-        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
+        .route_layer(from_fn(|req, next| require_perm(&["testimonies"], req, next)));
 
     // Moderation: admins only.
     let moderation = Router::new()
         .route("/testimonies/{id}/approve", post(testimony::approve))
         .route("/testimonies/{id}/reject", post(testimony::reject))
-        .route_layer(from_fn(|req, next| require_roles(crate::middleware::authorization::ADMIN, req, next)));
+        .route_layer(from_fn(|req, next| require_perm(&["testimonies"], req, next)));
 
     everyone.merge(moderation)
 }

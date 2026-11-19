@@ -15,24 +15,36 @@ pub struct Filter {
     /// Already wrapped as `%text%` with LIKE wildcards escaped.
     pub search: Option<String>,
     pub cell_group_id: Option<Uuid>,
+    /// Only members whose age falls in this age group.
+    pub age_group_id: Option<Uuid>,
+    /// A role limits what this person may see: only these cell groups or age groups.
+    pub scope: Option<(Vec<Uuid>, Vec<Uuid>)>,
 }
 
 const WHERE: &str = "m.foc_id = $1 AND m.deleted_at IS NULL
     AND ($2::text IS NULL OR m.status = $2)
     AND ($3::text IS NULL OR m.first_name ILIKE $3 OR m.last_name ILIKE $3 OR m.email ILIKE $3 OR m.phone ILIKE $3)
-    AND ($4::uuid IS NULL OR m.cell_group_id = $4)";
+    AND ($4::uuid IS NULL OR m.cell_group_id = $4)
+    AND (NOT $5::bool OR m.cell_group_id = ANY($6::uuid[]) OR EXISTS (SELECT 1 FROM age_groups g WHERE g.id = ANY($7::uuid[])
+          AND g.foc_id = m.foc_id AND m.dob IS NOT NULL AND date_part('year', age(m.dob)) BETWEEN g.min_age AND COALESCE(g.max_age, 200)))
+    AND ($8::uuid IS NULL OR EXISTS (SELECT 1 FROM age_groups g WHERE g.id = $8 AND g.foc_id = m.foc_id AND m.dob IS NOT NULL
+          AND date_part('year', age(m.dob)) BETWEEN g.min_age AND COALESCE(g.max_age, 200)))";
 
 /// Every query takes `foc_id`: tenant scoping lives HERE because the Axum
 /// connection bypasses Supabase RLS.
 pub async fn list_json(pool: &PgPool, foc_id: Uuid, f: &Filter, limit: i64, offset: i64) -> Result<Vec<Value>, sqlx::Error> {
     sqlx::query_scalar(&format!(
         "SELECT to_jsonb(m) FROM member_profiles m WHERE {WHERE}
-         ORDER BY m.first_name ASC, m.last_name ASC LIMIT $5 OFFSET $6"
+         ORDER BY m.first_name ASC, m.last_name ASC LIMIT $9 OFFSET $10"
     ))
     .bind(foc_id)
     .bind(&f.status)
     .bind(&f.search)
     .bind(f.cell_group_id)
+    .bind(f.scope.is_some())
+    .bind(f.scope.as_ref().map(|s| s.0.clone()).unwrap_or_default())
+    .bind(f.scope.as_ref().map(|s| s.1.clone()).unwrap_or_default())
+    .bind(f.age_group_id)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -45,6 +57,10 @@ pub async fn count_filtered(pool: &PgPool, foc_id: Uuid, f: &Filter) -> Result<i
         .bind(&f.status)
         .bind(&f.search)
         .bind(f.cell_group_id)
+        .bind(f.scope.is_some())
+        .bind(f.scope.as_ref().map(|s| s.0.clone()).unwrap_or_default())
+        .bind(f.scope.as_ref().map(|s| s.1.clone()).unwrap_or_default())
+        .bind(f.age_group_id)
         .fetch_one(pool)
         .await
 }
