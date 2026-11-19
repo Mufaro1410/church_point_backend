@@ -55,13 +55,13 @@ async fn rsvp_check_in_and_serving() {
     assert_eq!(env.call(m, "PUT", &format!("/m/events/{today}/rsvp"), Some(json!({"status":"sure"}))).await.0, 422);
     assert_eq!(env.call(m, "PUT", &format!("/m/events/{other}/rsvp"), Some(json!({"status":"going"}))).await.0, 404, "cannot touch another church's event");
 
-    let (st, c) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), None).await;
+    let (st, c) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), Some(json!({}))).await;
     assert_eq!(st, 200, "{c}");
     let first = c["data"][uid(A1_MEMBER).to_string()].clone();
     assert!(first.is_string());
-    let (_, c2) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), None).await;
+    let (_, c2) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), Some(json!({}))).await;
     assert_eq!(c2["data"][uid(A1_MEMBER).to_string()], first, "the first check-in time is kept");
-    assert_eq!(env.call(m, "POST", &format!("/m/events/{far}/check-in"), None).await.0, 422, "only around the event day");
+    assert_eq!(env.call(m, "POST", &format!("/m/events/{far}/check-in"), Some(json!({}))).await.0, 422, "only around the event day");
 
     let (st, s) = env.call(m, "PUT", &format!("/m/events/{today}/serving"), Some(json!({"ministry_id": null, "capacity": "Usher"}))).await;
     assert_eq!(st, 200, "{s}");
@@ -167,5 +167,38 @@ async fn pending_members_and_church_choice() {
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert!(v["data"].as_array().unwrap().len() >= 3);
     assert!(v["data"][0].get("email").is_none());
+    env.cleanup().await;
+}
+
+#[tokio::test]
+async fn family_check_in_and_email_lock() {
+    let Some(env) = setup().await else { return };
+    let m = &env.a1_member;
+    let today = event(&env, "Today", 0, "foc", FOC_A1).await;
+    sqlx::query("INSERT INTO family_relationships (member_id, related_member_id, relationship_type) VALUES ($1,$2,'sibling')")
+        .bind(uid(A1_MEMBER)).bind(uid(common::db::A1_ADMIN)).execute(&env.pool).await.unwrap();
+
+    // a linked family member can be checked in; the record is theirs, not mine
+    let fam = uid(common::db::A1_ADMIN).to_string();
+    let (st, c) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), Some(json!({"member_id": fam}))).await;
+    assert_eq!(st, 200, "{c}");
+    assert!(c["data"][&fam].is_string());
+    assert!(c["data"].get(uid(A1_MEMBER).to_string()).is_none(), "my own check-in is separate");
+    // someone I am not linked to cannot be checked in
+    let stranger = uid(common::db::A1_ADMIN2).to_string();
+    let (st, _) = env.call(m, "POST", &format!("/m/events/{today}/check-in"), Some(json!({"member_id": stranger}))).await;
+    assert_eq!(st, 422);
+
+    // the email is locked for direct (anon/authenticated) clients, but not for the backend role
+    let mut tx = env.pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL ROLE authenticated").execute(&mut *tx).await.unwrap();
+    let err = sqlx::query("UPDATE member_profiles SET email = 'hacker@example.com' WHERE id = $1")
+        .bind(uid(A1_MEMBER)).execute(&mut *tx).await.unwrap_err();
+    assert!(err.to_string().contains("Email address cannot be changed"), "{err}");
+    drop(tx);
+    sqlx::query("UPDATE member_profiles SET email = 'new@example.com' WHERE id = $1").bind(uid(A1_MEMBER)).execute(&env.pool).await.unwrap();
+    // and through the member API the field is refused outright
+    let (st, _) = env.call(m, "PATCH", "/m/profile", Some(json!({"email": "x@y.com"}))).await;
+    assert_eq!(st, 422);
     env.cleanup().await;
 }

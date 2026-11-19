@@ -47,6 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });
+    churchpoint_backend::services::push_service::spawn_reminder_clock(state.clone());
     let app = build_app(state);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

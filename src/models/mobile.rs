@@ -34,6 +34,22 @@ pub struct RsvpRequest {
     pub status: String,
 }
 
+/// Push notification switches. Anything left out stays as it was.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationPrefsRequest {
+    pub enabled: Option<bool>,
+    pub announcements: Option<bool>,
+    pub events: Option<bool>,
+}
+
+/// Check in yourself (empty body) or a family member you are linked to.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CheckInRequest {
+    pub member_id: Option<Uuid>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServingRequest {

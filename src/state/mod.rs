@@ -10,6 +10,7 @@ pub struct AppState {
     pub auth_cache: std::sync::Mutex<std::collections::HashMap<uuid::Uuid, (std::time::Instant, crate::models::auth::AuthProfile)>>,
     pub supabase: crate::clients::supabase::SupabaseClient,
     pub paynow: crate::clients::paynow::PaynowClient,
+    pub push: crate::clients::expo_push::ExpoPush,
     pub settings: Settings,
 }
 
@@ -27,6 +28,7 @@ impl AppState {
     pub fn new(db: PgPool, settings: Settings) -> SharedState {
         let supabase = crate::clients::supabase::SupabaseClient::new(&settings);
         let paynow = crate::clients::paynow::PaynowClient::new(&settings.paynow_base_url);
-        Arc::new(Self { db, auth_cache: Default::default(), supabase, paynow, settings })
+        let push = crate::clients::expo_push::ExpoPush::new(&settings.expo_push_url);
+        Arc::new(Self { db, auth_cache: Default::default(), supabase, paynow, push, settings })
     }
 }

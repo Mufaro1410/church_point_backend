@@ -87,7 +87,9 @@ pub async fn create(state: &SharedState, auth: &AuthUser, req: CreateEventReques
         qr_code,
         qr_generated_at: now,
     };
-    Ok(event_repository::insert(&state.db, &event).await?)
+    let row = event_repository::insert(&state.db, &event).await?;
+    crate::services::push_service::event_created(state, &row);
+    Ok(row)
 }
 
 pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut req: UpdateEventRequest) -> AppResult<Value> {

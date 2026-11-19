@@ -62,8 +62,16 @@ pub async fn rsvp(State(s): St, Extension(a): Me, ApiPath(id): ApiPath<Uuid>, Ap
     Ok(ok(svc::rsvp(&s, &a, id, b).await?))
 }
 
-pub async fn check_in(State(s): St, Extension(a): Me, ApiPath(id): ApiPath<Uuid>) -> AppResult<Reply<Value>> {
-    Ok(ok(svc::check_in(&s, &a, id).await?))
+pub async fn get_notifications(State(s): St, Extension(a): Me) -> AppResult<Reply<Value>> {
+    Ok(ok(svc::get_notifications(&s, &a).await?))
+}
+
+pub async fn notifications(State(s): St, Extension(a): Me, ApiJson(b): ApiJson<NotificationPrefsRequest>) -> AppResult<Reply<Value>> {
+    Ok(ok(svc::set_notifications(&s, &a, b).await?))
+}
+
+pub async fn check_in(State(s): St, Extension(a): Me, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<CheckInRequest>) -> AppResult<Reply<Value>> {
+    Ok(ok(svc::check_in(&s, &a, id, b.member_id).await?))
 }
 
 pub async fn serving(State(s): St, Extension(a): Me, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<ServingRequest>) -> AppResult<Reply<Value>> {

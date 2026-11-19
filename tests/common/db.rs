@@ -212,6 +212,7 @@ fn test_url() -> Option<String> {
 
 pub struct Env {
     pub app: Router,
+    pub state: churchpoint_backend::state::SharedState,
     /// Superuser connection (the same power the Axum server has: it bypasses Row Level Security).
     pub pool: PgPool,
     admin: PgPool,
@@ -234,6 +235,11 @@ pub async fn setup_with(mock_supabase: Option<String>) -> Option<Env> {
 
 /// Also lets a test point the server at a fake Paynow.
 pub async fn setup_custom(mock_supabase: Option<String>, paynow: Option<String>) -> Option<Env> {
+    setup_full(mock_supabase, paynow, None).await
+}
+
+/// Also lets a test point the server at a fake Expo push service.
+pub async fn setup_full(mock_supabase: Option<String>, paynow: Option<String>, push: Option<String>) -> Option<Env> {
     let url = test_url()?;
     let t = templates(&url).await;
     let (admin, name) = copy_template(&url, &t.migrated).await;
@@ -251,6 +257,9 @@ pub async fn setup_custom(mock_supabase: Option<String>, paynow: Option<String>)
         password_reset_redirect: None,
         public_base_url: Some("https://example.test".into()),
         paynow_base_url: paynow.unwrap_or_else(|| "https://www.paynow.co.zw".into()),
+        expo_push_url: push.unwrap_or_else(|| "http://127.0.0.1:9/push".into()),
+        reminders_enabled: false,
+        app_timezone: "Africa/Harare".into(),
         audio_max_mb: 5,
         supabase_jwt_secret: SECRET.into(),
         supabase_url: Some(mock_supabase.clone().unwrap_or_else(|| SUPABASE_URL.into())),
@@ -258,9 +267,10 @@ pub async fn setup_custom(mock_supabase: Option<String>, paynow: Option<String>)
         supabase_service_key: mock_supabase.as_ref().map(|_| "service-key".to_string()),
         cors_origins: vec![],
     };
-    let app = build_app(AppState::new(pool.clone(), settings));
+    let state = AppState::new(pool.clone(), settings);
+    let app = build_app(state.clone());
     Some(Env {
-        app, pool, admin, name,
+        app, state, pool, admin, name,
         a1_admin: actor(A1_ADMIN, FOC_A1),
         a1_admin2: actor(A1_ADMIN2, FOC_A1),
         a1_member: actor(A1_MEMBER, FOC_A1),

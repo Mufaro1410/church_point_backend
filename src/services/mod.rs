@@ -13,3 +13,5 @@ pub mod scope;
 pub mod sermon_service;
 pub mod testimony_service;
 pub mod mobile_service;
+pub mod push_service;
+pub mod capacity_service;

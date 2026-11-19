@@ -13,6 +13,7 @@ use crate::{
 pub mod announcements;
 pub mod auth;
 pub mod catalog;
+pub mod capacities;
 pub mod events;
 pub mod finance;
 pub mod foc;
@@ -45,6 +46,7 @@ pub fn build(state: SharedState) -> Router {
         .merge(members::routes())
         .merge(sermons::routes())
         .merge(catalog::routes())
+        .merge(capacities::routes())
         .merge(org::routes())
         .merge(platform::routes())
         .merge(prayers::routes())

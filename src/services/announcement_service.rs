@@ -56,7 +56,9 @@ pub async fn create(state: &SharedState, auth: &AuthUser, r: CreateAnnouncementR
         end_date: r.end_date,
         is_active: r.is_active.unwrap_or(true),
     };
-    Ok(announcement_repository::insert(&state.db, &announcement).await?)
+    let row = announcement_repository::insert(&state.db, &announcement).await?;
+    crate::services::push_service::announcement_created(state, &row);
+    Ok(row)
 }
 
 /// A change matched no row: visible-but-not-yours is 403, otherwise 404.

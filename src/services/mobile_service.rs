@@ -46,6 +46,14 @@ pub async fn public_focs(state: &SharedState) -> AppResult<Vec<Value>> {
 
 // ── everything the app needs to open, in one round trip ──
 
+pub async fn get_notifications(state: &SharedState, auth: &AuthUser) -> AppResult<Value> {
+    Ok(repo::notification_prefs(&state.db, auth.member_id).await?)
+}
+
+pub async fn set_notifications(state: &SharedState, auth: &AuthUser, r: NotificationPrefsRequest) -> AppResult<Value> {
+    Ok(repo::set_notification_prefs(&state.db, auth.member_id, &r).await?)
+}
+
 pub async fn bootstrap(state: &SharedState, auth: &AuthUser) -> AppResult<Value> {
     let foc = auth.require_foc()?;
     let me = auth.member_id;
@@ -55,7 +63,7 @@ pub async fn bootstrap(state: &SharedState, auth: &AuthUser) -> AppResult<Value>
     let (y0, y1) = (NaiveDate::from_ymd_opt(year, 1, 1).unwrap(), NaiveDate::from_ymd_opt(year, 12, 31).unwrap());
 
     // Independent queries run side by side (matters when the database is far away).
-    let (foc_row, events, prayers, sermons, ministries, leaders, groups, courses, plans, progress, announcements, testimonies, incomes, payments, birthdays) = tokio::try_join!(
+    let (foc_row, events, prayers, sermons, ministries, leaders, groups, courses, plans, progress, announcements, testimonies, incomes, payments, birthdays, capacities, prefs) = tokio::try_join!(
         repo::foc(db, foc),
         event_repository::list_visible(db, foc, y0, y1),
         prayer_repository::list(db, foc, me, today - Duration::days(365), today + Duration::days(30)),
@@ -71,6 +79,8 @@ pub async fn bootstrap(state: &SharedState, auth: &AuthUser) -> AppResult<Value>
         repo::my_incomes(db, foc, me),
         payment_repository::list_for_member(db, me, 30),
         repo::birthdays(db, foc),
+        crate::repositories::capacity_repository::list(db, foc),
+        repo::notification_prefs(db, me),
     )?;
 
     // Members never need the check-in QR image or the admins' manual headcount.
@@ -100,6 +110,8 @@ pub async fn bootstrap(state: &SharedState, auth: &AuthUser) -> AppResult<Value>
         "incomes": incomes,
         "payments": payments,
         "birthdays": birthdays,
+        "serving_capacities": capacities,
+        "notification_prefs": prefs,
     }))
 }
 
@@ -167,9 +179,19 @@ pub async fn rsvp(state: &SharedState, auth: &AuthUser, id: Uuid, r: RsvpRequest
     Ok(repo::set_rsvp(&state.db, id, auth.member_id, &r.status).await?)
 }
 
-pub async fn check_in(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult<Value> {
+pub async fn check_in(state: &SharedState, auth: &AuthUser, id: Uuid, member: Option<Uuid>) -> AppResult<Value> {
     visible_event(state, auth, id).await?;
-    repo::check_in(&state.db, id, auth.member_id).await?
+    let who = match member {
+        Some(m) if m != auth.member_id => {
+            let foc = auth.require_foc()?;
+            if !repo::is_family(&state.db, auth.member_id, m, foc).await? {
+                return Err(AppError::Validation("You can only check in family members linked to your profile.".into()));
+            }
+            m
+        }
+        _ => auth.member_id,
+    };
+    repo::check_in(&state.db, id, who).await?
         .ok_or_else(|| AppError::Validation("Check-in is only open on the day of the event.".into()))
 }
 

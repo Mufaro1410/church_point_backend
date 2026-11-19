@@ -26,3 +26,4 @@ impl<T: Serialize> ApiResponse<T> {
 }
 pub mod payment;
 pub mod mobile;
+pub mod capacity;

@@ -161,6 +161,13 @@ pub async fn my_family(pool: &PgPool, member: Uuid, foc: Uuid) -> R<Vec<Value>> 
     ).bind(member).bind(foc).fetch_all(pool).await
 }
 
+pub async fn is_family(pool: &PgPool, me: Uuid, other: Uuid, foc: Uuid) -> R<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM family_relationships f JOIN member_profiles rm ON rm.id = f.related_member_id
+                        WHERE f.member_id = $1 AND f.related_member_id = $2 AND rm.foc_id = $3 AND rm.deleted_at IS NULL)",
+    ).bind(me).bind(other).bind(foc).fetch_one(pool).await
+}
+
 pub async fn search_members(pool: &PgPool, foc: Uuid, me: Uuid, like: &str) -> R<Vec<Value>> {
     sqlx::query_scalar(
         "SELECT jsonb_build_object('id', m.id, 'first_name', m.first_name, 'last_name', m.last_name, 'profile_image', m.profile_image)
@@ -207,6 +214,24 @@ pub async fn save_push_token(pool: &PgPool, me: Uuid, token: &str) -> R<()> {
                  ON CONFLICT (member_id) DO UPDATE SET token = $2, updated_at = now()")
         .bind(me).bind(token).execute(pool).await?;
     Ok(())
+}
+
+pub async fn notification_prefs(pool: &PgPool, me: Uuid) -> R<Value> {
+    sqlx::query_scalar(
+        "SELECT jsonb_build_object('enabled', COALESCE(p.enabled, true), 'announcements', COALESCE(p.announcements, true), 'events', COALESCE(p.events, true))
+         FROM (SELECT $1::uuid AS id) x LEFT JOIN member_notification_prefs p ON p.member_id = x.id",
+    ).bind(me).fetch_one(pool).await
+}
+
+pub async fn set_notification_prefs(pool: &PgPool, me: Uuid, r: &crate::models::mobile::NotificationPrefsRequest) -> R<Value> {
+    sqlx::query(
+        "INSERT INTO member_notification_prefs (member_id, enabled, announcements, events)
+         VALUES ($1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, true))
+         ON CONFLICT (member_id) DO UPDATE SET enabled = COALESCE($2, member_notification_prefs.enabled),
+            announcements = COALESCE($3, member_notification_prefs.announcements),
+            events = COALESCE($4, member_notification_prefs.events), updated_at = now()",
+    ).bind(me).bind(r.enabled).bind(r.announcements).bind(r.events).execute(pool).await?;
+    notification_prefs(pool, me).await
 }
 
 pub async fn register_profile(pool: &PgPool, user: Uuid, r: &crate::models::mobile::RegisterMemberRequest, email: &str) -> R<Value> {

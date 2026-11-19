@@ -38,6 +38,7 @@ pub fn routes() -> Router<SharedState> {
         .route("/m/transfer/request", post(h::request_transfer))
         .route("/m/transfer/cancel", post(h::cancel_transfer))
         .route("/m/push-token", put(h::push_token))
+        .route("/m/notifications", get(h::get_notifications).put(h::notifications))
         .route("/m/events/{id}/rsvp", put(h::rsvp))
         .route("/m/events/{id}/check-in", post(h::check_in))
         .route("/m/events/{id}/serving", put(h::serving))

@@ -28,6 +28,11 @@ pub struct Settings {
     pub public_base_url: Option<String>,
     /// Paynow address (override only for testing).
     pub paynow_base_url: String,
+    /// Expo push service (sends to the members' phones).
+    pub expo_push_url: String,
+    /// Event reminders on/off, and the church's local time zone (reminders go out at local 17:00 the day before and 07:00 on the day).
+    pub reminders_enabled: bool,
+    pub app_timezone: String,
     /// Page the "reset password" email links to (optional; otherwise Supabase's own setting is used).
     pub password_reset_redirect: Option<String>,
 }
@@ -55,6 +60,9 @@ impl Settings {
             public_base_url: env::var("PUBLIC_BASE_URL").ok().map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()),
             password_reset_redirect: env::var("PASSWORD_RESET_REDIRECT_URL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             paynow_base_url: env::var("PAYNOW_BASE_URL").unwrap_or_else(|_| "https://www.paynow.co.zw".into()),
+            expo_push_url: env::var("EXPO_PUSH_URL").unwrap_or_else(|_| "https://exp.host/--/api/v2/push/send".into()),
+            reminders_enabled: env::var("REMINDERS_ENABLED").map(|v| v != "false" && v != "0").unwrap_or(true),
+            app_timezone: env::var("APP_TIMEZONE").unwrap_or_else(|_| "Africa/Harare".into()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_default()
                 .split(',')
