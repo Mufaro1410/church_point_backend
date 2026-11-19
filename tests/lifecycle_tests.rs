@@ -124,3 +124,25 @@ async fn deleting_an_account_wipes_the_person_but_keeps_the_books() {
     assert_eq!(why.as_deref(), Some("deleted"));
     env.cleanup().await;
 }
+
+#[tokio::test]
+async fn bible_progress_moves_from_day_numbers_to_dates() {
+    let Some(env) = setup().await else { return };
+    let plan: Uuid = sqlx::query_scalar("INSERT INTO bible_reading_plans (name, year, readings) VALUES ('DBR', 2026, $1) RETURNING id")
+        .bind(json!([{"day":1,"date":"2026-01-01","readings":"A"},{"day":2,"date":"2026-01-02","readings":"B"},{"day":365,"date":"2026-12-31","readings":"Z"}]))
+        .fetch_one(&env.pool).await.unwrap();
+    sqlx::query("INSERT INTO bible_reading_progress (profile_id, plan_id, progress_data) VALUES ($1,$2,$3)")
+        .bind(uid(A1_MEMBER)).bind(plan)
+        .bind(json!({"1":{"completed":true},"365":{"completed":true},"20270102":{"completed":true}}))
+        .execute(&env.pool).await.unwrap();
+    // the migration is safe to run again: already-converted keys stay as they are
+    for _ in 0..2 {
+        sqlx::raw_sql(include_str!("../migrations/20261120120000_bible_progress_by_date.sql")).execute(&env.pool).await.unwrap();
+    }
+    let data: serde_json::Value = sqlx::query_scalar("SELECT progress_data FROM bible_reading_progress WHERE plan_id = $1").bind(plan).fetch_one(&env.pool).await.unwrap();
+    let mut keys: Vec<_> = data.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["20260101", "20261231", "20270102"], "{data}");
+    assert_eq!(data["20260101"]["completed"], true);
+    env.cleanup().await;
+}
