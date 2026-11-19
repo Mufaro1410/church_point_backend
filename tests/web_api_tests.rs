@@ -153,7 +153,7 @@ async fn serving_social_events_plans_and_foc_settings() {
     let eid = id(&e);
     let (s, sv) = env.call(a1, "POST", &format!("/events/{eid}/serving"), Some(json!({"profile_id": env.a1_member.member_id,"capacity":"usher"}))).await;
     assert_eq!(s, StatusCode::CREATED, "{sv}");
-    assert_eq!(env.call(a1, "POST", &format!("/events/{eid}/serving"), Some(json!({"profile_id": env.a1_member.member_id}))).await.0, StatusCode::CONFLICT);
+    assert_eq!(env.call(a1, "POST", &format!("/events/{eid}/serving"), Some(json!({"profile_id": env.a1_member.member_id, "capacity":"Usher"}))).await.0, StatusCode::CONFLICT, "the same role twice is a duplicate");
     assert_ne!(env.call(a1, "POST", &format!("/events/{eid}/serving"), Some(json!({"profile_id": a2.member_id}))).await.0, StatusCode::CREATED);
     assert_ne!(env.call(a2, "GET", &format!("/events/{eid}/serving"), None).await.0, StatusCode::OK);
     let (_, l) = env.call(a1, "GET", &format!("/events/{eid}/serving"), None).await;

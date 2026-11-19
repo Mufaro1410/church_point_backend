@@ -116,7 +116,7 @@ pub async fn set_error(pool: &PgPool, id: Uuid, error: &str) -> Result<(), sqlx:
 const VIEW: &str = "SELECT jsonb_build_object('id', p.id, 'amount', p.amount::text, 'currency_id', p.currency_id,
         'currency', c.name, 'symbol', c.symbol, 'purpose', p.purpose, 'method', p.method, 'phone', p.phone,
         'status', p.status, 'instructions', p.instructions, 'error', p.error, 'income_id', p.income_id,
-        'member_id', p.member_id, 'member_name', trim(coalesce(m.first_name,'') || ' ' || coalesce(m.last_name,'')),
+        'member_id', p.member_id, 'member_name', COALESCE(p.payer_name, trim(coalesce(m.first_name,'') || ' ' || coalesce(m.last_name,''))),
         'created_at', p.created_at, 'updated_at', p.updated_at)
     FROM payments p JOIN currencies c ON c.id = p.currency_id LEFT JOIN member_profiles m ON m.id = p.member_id";
 

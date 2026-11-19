@@ -26,10 +26,19 @@ type Shared = Arc<Mutex<Fake>>;
 
 fn session(user: &str, email: &str) -> Value {
     json!({"access_token":"AT","refresh_token":"RT","expires_in":3600,"expires_at":9999999999i64,
-           "user":{"id":user,"email":email,"secret_field":"must not leak"}})
+           "user":{"id":user,"email":email,"secret_field":"must not leak",
+                   "email_confirmed_at": if email.starts_with("unverified") { Value::Null } else { json!("2026-01-01T00:00:00Z") }}})
 }
 
 async fn token(Query(q): Query<std::collections::HashMap<String, String>>, Json(b): Json<Value>) -> (StatusCode, Json<Value>) {
+    let who = match b["email"].as_str() {
+        Some("claim@x.com") => Some((uid(7100), "claim@x.com")),
+        Some("unverified@x.com") => Some((uid(7101), "unverified@x.com")),
+        _ => None,
+    };
+    if let (Some("password"), Some((id, email))) = (q.get("grant_type").map(String::as_str), who) {
+        return (StatusCode::OK, Json(session(&id.to_string(), email)));
+    }
     let ok = match q.get("grant_type").map(String::as_str) {
         Some("password") => b["email"] == "ada@x.com" && b["password"] == "goodpass1",
         Some("refresh_token") => b["refresh_token"] == "RT",
@@ -392,5 +401,41 @@ async fn member_signup_creates_a_pending_profile() {
     let (st, _) = post_public(&env, "/auth/register-member", bad).await;
     assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(!fake.lock().unwrap().deleted_users.is_empty(), "the half-made login must be removed");
+    env.cleanup().await;
+}
+
+#[tokio::test]
+async fn admin_created_profile_is_claimed_only_with_a_verified_email() {
+    let (url, fake) = start_fake().await;
+    let Some(env) = setup_with(Some(url)).await else { return };
+    for (n, email, first) in [(7100u32, "claim@x.com", "Cora"), (7101, "unverified@x.com", "Uma")] {
+        sqlx::query("INSERT INTO auth.users(id, email) VALUES ($1,$2)").bind(uid(n)).bind(email).execute(&env.pool).await.unwrap();
+        sqlx::query("INSERT INTO member_profiles(id, foc_id, email, first_name, last_name, gender, phone, status) VALUES ($1,$2,$3,$4,'Added','F','0771','approved')")
+            .bind(uid(n + 100)).bind(uid(common::db::FOC_A1)).bind(email).bind(first).execute(&env.pool).await.unwrap();
+    }
+    // signing up with that email does not create a second profile
+    let (st, r) = post_public(&env, "/auth/register-member", json!({
+        "email": "Claim@X.com", "password": "goodpass1", "first_name": "Cora", "last_name": "Moyo", "gender": "F",
+        "phone": "0771234567", "foc_id": uid(common::db::FOC_A2), "accepted_terms": true})).await;
+    assert_eq!(st, StatusCode::CREATED, "{r}");
+    assert_eq!(r["data"]["status"], "claim");
+    assert!(fake.lock().unwrap().signups.contains(&"claim@x.com".to_string()));
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM member_profiles WHERE lower(email) = 'claim@x.com'").fetch_one(&env.pool).await.unwrap();
+    assert_eq!(n, 1);
+    let owner = || async { sqlx::query_scalar::<_, Option<uuid::Uuid>>("SELECT user_id FROM member_profiles WHERE id = $1").bind(uid(7200)).fetch_one(&env.pool).await.unwrap() };
+    assert_eq!(owner().await, None, "nothing is linked before the first verified sign-in");
+
+    // an unverified address never claims a profile
+    let (st, _) = post_public(&env, "/auth/login", json!({"email":"unverified@x.com","password":"goodpass1"})).await;
+    assert_eq!(st, StatusCode::OK);
+    let uv: Option<uuid::Uuid> = sqlx::query_scalar("SELECT user_id FROM member_profiles WHERE id = $1").bind(uid(7201)).fetch_one(&env.pool).await.unwrap();
+    assert_eq!(uv, None);
+
+    // a verified one does, keeping the church and status the admin gave
+    let (st, r) = post_public(&env, "/auth/login", json!({"email":"claim@x.com","password":"goodpass1"})).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    assert_eq!(owner().await, Some(uid(7100)));
+    assert_eq!(r["data"]["me"]["member_id"], uid(7200).to_string());
+    assert_eq!(r["data"]["me"]["foc_id"], uid(common::db::FOC_A1).to_string());
     env.cleanup().await;
 }

@@ -11,7 +11,7 @@ use crate::models::finance::{Kind, ValidChanges, ValidEntry};
 const INCOME_SELECT: &str = "SELECT to_jsonb(i) || jsonb_build_object(
     'amount', i.amount::text, 'exchange_rate', i.exchange_rate::text, 'amount_usd', i.amount_usd::text,
     'currency_name', cu.name, 'currency_symbol', cu.symbol, 'category_name', ca.name, 'method_name', me.name,
-    'member_name', NULLIF(btrim(concat_ws(' ', m.first_name, m.last_name)), ''))
+    'member_name', COALESCE(i.payer_name, NULLIF(btrim(concat_ws(' ', m.first_name, m.last_name)), '')))
   FROM incomes i
   LEFT JOIN currencies cu ON cu.id = i.currency_id
   LEFT JOIN categories ca ON ca.id = i.category_id

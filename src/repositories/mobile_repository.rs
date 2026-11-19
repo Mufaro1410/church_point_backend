@@ -105,12 +105,82 @@ pub async fn check_in(pool: &PgPool, event: Uuid, member: Uuid) -> R<Option<Valu
     ).bind(event).bind(member.to_string()).fetch_optional(pool).await
 }
 
-pub async fn upsert_serving(pool: &PgPool, event: Uuid, member: Uuid, ministry: Option<Uuid>, capacity: &str) -> R<Value> {
+/// Replaces the member's serving roles for the event with exactly this set.
+pub async fn replace_serving(pool: &PgPool, event: Uuid, member: Uuid, items: &[(Option<Uuid>, String)]) -> R<Vec<Value>> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM event_serving WHERE event_id = $1 AND profile_id = $2").bind(event).bind(member).execute(&mut *tx).await?;
+    let mut out = Vec::new();
+    for (ministry, capacity) in items {
+        let row: Option<Value> = sqlx::query_scalar(
+            "INSERT INTO event_serving (event_id, profile_id, ministry_id, capacity, marked_at) VALUES ($1,$2,$3,$4, now())
+             ON CONFLICT DO NOTHING RETURNING to_jsonb(event_serving)",
+        ).bind(event).bind(member).bind(ministry).bind(capacity).fetch_optional(&mut *tx).await?;
+        out.extend(row);
+    }
+    tx.commit().await?;
+    Ok(out)
+}
+
+pub async fn my_profile(pool: &PgPool, me: Uuid) -> R<Option<Value>> {
     sqlx::query_scalar(
-        "INSERT INTO event_serving (event_id, profile_id, ministry_id, capacity, marked_at) VALUES ($1,$2,$3,$4, now())
-         ON CONFLICT (event_id, profile_id) DO UPDATE SET ministry_id = $3, capacity = $4, marked_at = now(), updated_at = now()
-         RETURNING to_jsonb(event_serving)",
-    ).bind(event).bind(member).bind(ministry).bind(capacity).fetch_one(pool).await
+        "SELECT jsonb_build_object('id', m.id, 'first_name', m.first_name, 'last_name', m.last_name, 'gender', m.gender,
+                'email', m.email, 'phone', m.phone, 'address', m.address, 'dob', m.dob, 'profession', m.profession,
+                'marital_status', m.marital_status, 'status', m.status, 'foc_id', m.foc_id, 'has_church', m.foc_id IS NOT NULL)
+         FROM member_profiles m WHERE m.id = $1 AND m.deleted_at IS NULL",
+    ).bind(me).fetch_optional(pool).await
+}
+
+/// Anonymises the member in one transaction. Finance rows are untouched (they keep their payer snapshot).
+/// Returns the login id so the caller can remove it afterwards. None = nothing to delete.
+pub async fn delete_account(pool: &PgPool, me: Uuid, reason: &str) -> R<Option<Option<Uuid>>> {
+    let mut tx = pool.begin().await?;
+    let row: Option<(Option<Uuid>, Option<Uuid>, String)> = sqlx::query_as(
+        "SELECT user_id, foc_id, role::text FROM member_profiles WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+    ).bind(me).fetch_optional(&mut *tx).await?;
+    let Some((user_id, foc_id, _role)) = row else { return Ok(None) };
+    // make sure every finance row carries the payer's name before it is wiped from the profile
+    sqlx::query("UPDATE incomes i SET payer_name = nullif(btrim(concat_ws(' ', m.first_name, m.last_name)), '')
+                 FROM member_profiles m WHERE m.id = i.member_id AND i.member_id = $1 AND i.payer_name IS NULL").bind(me).execute(&mut *tx).await?;
+    sqlx::query("UPDATE payments p SET payer_name = nullif(btrim(concat_ws(' ', m.first_name, m.last_name)), '')
+                 FROM member_profiles m WHERE m.id = p.member_id AND p.member_id = $1 AND p.payer_name IS NULL").bind(me).execute(&mut *tx).await?;
+    for q in [
+        "DELETE FROM prayers WHERE profile_id = $1",
+        "DELETE FROM testimonies WHERE profile_id = $1",
+        "DELETE FROM family_relationships WHERE member_id = $1 OR related_member_id = $1",
+        "DELETE FROM member_push_tokens WHERE member_id = $1",
+        "DELETE FROM member_notification_prefs WHERE member_id = $1",
+        "DELETE FROM bible_reading_progress WHERE profile_id = $1",
+    ] {
+        sqlx::query(q).bind(me).execute(&mut *tx).await?;
+    }
+    sqlx::query(
+        "UPDATE member_profiles SET first_name = 'Deleted', last_name = 'member', email = NULL, phone = '', address = NULL,
+                dob = NULL, profession = NULL, marital_status = NULL, profile_image = NULL, baptism_date = NULL,
+                cell_group_id = NULL, ministry_ids = NULL, course_ids = NULL, dbr_plan = NULL,
+                user_id = NULL, foc_id = NULL, status = 'rejected', role = 'member', deleted_at = now(), updated_at = now()
+         WHERE id = $1",
+    ).bind(me).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO account_deletions (member_id, foc_id, reason, auth_user_id) VALUES ($1,$2,$3,$4)")
+        .bind(me).bind(foc_id).bind(reason).bind(user_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Some(user_id))
+}
+
+pub async fn login_removed(pool: &PgPool, me: Uuid) -> R<()> {
+    sqlx::query("UPDATE account_deletions SET auth_user_id = NULL WHERE member_id = $1").bind(me).execute(pool).await?;
+    Ok(())
+}
+
+/// An unclaimed profile (made by an admin, no login yet) that carries this email.
+pub async fn unclaimed_by_email(pool: &PgPool, email: &str) -> R<Option<Uuid>> {
+    sqlx::query_scalar("SELECT id FROM member_profiles WHERE lower(email) = lower($1) AND user_id IS NULL AND deleted_at IS NULL LIMIT 1")
+        .bind(email).fetch_optional(pool).await
+}
+
+pub async fn claim_profile(pool: &PgPool, member: Uuid, user: Uuid) -> R<u64> {
+    Ok(sqlx::query("UPDATE member_profiles SET user_id = $2, terms_accepted_at = COALESCE(terms_accepted_at, now()), updated_at = now()
+                    WHERE id = $1 AND user_id IS NULL AND deleted_at IS NULL")
+        .bind(member).bind(user).execute(pool).await?.rows_affected())
 }
 
 // ── reactions ──

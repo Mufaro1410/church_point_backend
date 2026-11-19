@@ -54,7 +54,22 @@ pub struct CheckInRequest {
 #[serde(deny_unknown_fields)]
 pub struct ServingRequest {
     pub ministry_id: Option<Uuid>,
+    pub capacity: Option<String>,
+    /// Several roles at once (replaces what the member had for this event).
+    pub servings: Option<Vec<ServingItem>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServingItem {
+    pub ministry_id: Option<Uuid>,
     pub capacity: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteAccountRequest {
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]

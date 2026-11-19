@@ -30,7 +30,10 @@ pub fn public_routes() -> Router<SharedState> {
 
 pub fn routes() -> Router<SharedState> {
     // A signed-in person who has no church yet (or is waiting) can pick one.
-    let signed_in = Router::new().route("/m/church", put(h::choose_church));
+    let signed_in = Router::new()
+        .route("/m/church", put(h::choose_church))
+        .route("/m/me", get(h::my_profile))
+        .route("/m/account/delete", post(h::delete_account));
 
     let members = Router::new()
         .route("/m/bootstrap", get(h::bootstrap))

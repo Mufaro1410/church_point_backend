@@ -43,6 +43,15 @@ pub async fn choose_church(State(s): St, Extension(a): Me, ApiJson(b): ApiJson<C
     Ok(done())
 }
 
+pub async fn my_profile(State(s): St, Extension(a): Me) -> AppResult<Reply<Value>> {
+    Ok(ok(svc::my_profile(&s, &a).await?))
+}
+
+pub async fn delete_account(State(s): St, Extension(a): Me, ApiJson(b): ApiJson<DeleteAccountRequest>) -> AppResult<Reply<Value>> {
+    svc::delete_account(&s, &a, b).await?;
+    Ok(done())
+}
+
 pub async fn request_transfer(State(s): St, Extension(a): Me) -> AppResult<Reply<Value>> {
     svc::request_transfer(&s, &a).await?;
     Ok(done())

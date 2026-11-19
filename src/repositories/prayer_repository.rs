@@ -12,6 +12,7 @@ use crate::models::prayer::UpdatePrayerRequest;
 const MASKED: &str = "to_jsonb(p) || jsonb_build_object(
     'profile_id', CASE WHEN p.is_anonymous AND p.profile_id <> $1 THEN NULL ELSE p.profile_id END,
     'author_name', CASE WHEN p.is_anonymous THEN 'Anonymous'
+                        WHEN m.foc_id IS DISTINCT FROM p.foc_id THEN 'Former member'
                         ELSE NULLIF(btrim(concat_ws(' ', m.first_name, m.last_name)), '') END,
     'is_mine', (p.profile_id = $1))";
 

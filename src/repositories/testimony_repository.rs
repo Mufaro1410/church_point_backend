@@ -9,7 +9,9 @@ use crate::models::testimony::UpdateTestimonyRequest;
 /// holds a real name, so it is replaced as well as `profile_id`. $1 = caller's member id.
 const MASKED: &str = "to_jsonb(t) || jsonb_build_object(
     'profile_id', CASE WHEN t.is_anonymous AND t.profile_id IS DISTINCT FROM $1 THEN NULL ELSE t.profile_id END,
-    'author',     CASE WHEN t.is_anonymous AND t.profile_id IS DISTINCT FROM $1 THEN 'Anonymous' ELSE t.author END,
+    'author',     CASE WHEN t.is_anonymous AND t.profile_id IS DISTINCT FROM $1 THEN 'Anonymous'
+                       WHEN t.profile_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM member_profiles mm WHERE mm.id = t.profile_id AND mm.foc_id IS NOT DISTINCT FROM t.foc_id) THEN 'Former member'
+                       ELSE t.author END,
     'is_mine',    COALESCE(t.profile_id = $1, false))";
 
 pub async fn list(

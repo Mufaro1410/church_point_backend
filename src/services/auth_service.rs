@@ -52,8 +52,25 @@ fn user_id(raw: &Value) -> AppResult<Uuid> {
     raw["user"]["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| AppError::Upstream("Auth gave no user id.".into()))
 }
 
+/// A profile an admin made for this person (same email, no login yet) becomes theirs the first time they
+/// sign in with a VERIFIED email. Nothing is linked while the address is unconfirmed.
+async fn claim_if_verified(state: &SharedState, raw: &Value, id: Uuid) -> AppResult<()> {
+    let verified = !raw["user"]["email_confirmed_at"].is_null();
+    let email = raw["user"]["email"].as_str().unwrap_or("");
+    if !verified || email.is_empty() || user_repository::find_auth_profile(&state.db, id).await?.is_some() {
+        return Ok(());
+    }
+    if let Some(member) = crate::repositories::mobile_repository::unclaimed_by_email(&state.db, email).await? {
+        if crate::repositories::mobile_repository::claim_profile(&state.db, member, id).await? > 0 {
+            state.clear_auth_cache();
+        }
+    }
+    Ok(())
+}
+
 async fn session_reply(state: &SharedState, raw: Value) -> AppResult<Value> {
     let id = user_id(&raw)?;
+    claim_if_verified(state, &raw, id).await?;
     Ok(json!({
         "session": session_json(&raw),
         "user": { "id": id, "email": raw["user"]["email"] },
@@ -68,7 +85,9 @@ pub async fn register_member(state: &SharedState, r: crate::models::mobile::Regi
     if !r.accepted_terms {
         return Err(AppError::Validation("You must accept the Terms & Conditions.".into()));
     }
-    if catalog_repository::email_taken(&state.db, &e).await? {
+    // An admin may already have added this person: then this is the login for that profile, not a new member.
+    let claiming = crate::repositories::mobile_repository::unclaimed_by_email(&state.db, &e).await?.is_some();
+    if !claiming && catalog_repository::email_taken(&state.db, &e).await? {
         return Err(OrgError::Duplicate("An account with this email").into());
     }
     let meta = json!({
@@ -80,6 +99,10 @@ pub async fn register_member(state: &SharedState, r: crate::models::mobile::Regi
     let id: Uuid = user["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| AppError::Upstream("Sign-up gave no user id.".into()))?;
     if user["identities"].as_array().is_some_and(|i| i.is_empty()) {
         return Err(OrgError::Duplicate("An account with this email").into());
+    }
+    if claiming {
+        // Verify the email first; the profile is linked at the first sign-in after that.
+        return Ok(json!({ "registered": true, "status": "claim", "verify_email": true }));
     }
     // The database function checks every field again and creates the pending profile.
     let outcome = crate::repositories::mobile_repository::register_profile(&state.db, id, &r, &e).await;

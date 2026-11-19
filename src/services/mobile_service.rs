@@ -197,11 +197,52 @@ pub async fn check_in(state: &SharedState, auth: &AuthUser, id: Uuid, member: Op
 
 pub async fn serving(state: &SharedState, auth: &AuthUser, id: Uuid, r: ServingRequest) -> AppResult<Value> {
     visible_event(state, auth, id).await?;
-    let capacity = r.capacity.trim();
-    if capacity.is_empty() || capacity.len() > 80 {
-        return Err(AppError::Validation("capacity is required (max 80 characters).".into()));
+    let raw: Vec<(Option<Uuid>, String)> = match (r.servings, r.capacity) {
+        (Some(list), None) if r.ministry_id.is_none() => list.into_iter().map(|i| (i.ministry_id, i.capacity)).collect(),
+        (None, Some(c)) => vec![(r.ministry_id, c)],
+        _ => return Err(AppError::Validation("Send either servings, or capacity (with ministry_id).".into())),
+    };
+    let mut items: Vec<(Option<Uuid>, String)> = Vec::new();
+    for (ministry, c) in raw {
+        let c = c.trim().to_string();
+        if c.is_empty() || c.len() > 80 {
+            return Err(AppError::Validation("capacity is required (max 80 characters).".into()));
+        }
+        if !items.iter().any(|(_, x)| x.eq_ignore_ascii_case(&c)) {
+            items.push((ministry, c));
+        }
     }
-    Ok(repo::upsert_serving(&state.db, id, auth.member_id, r.ministry_id, capacity).await?)
+    if items.len() > 10 {
+        return Err(AppError::Validation("You can serve in at most 10 places at once.".into()));
+    }
+    Ok(json!({ "servings": repo::replace_serving(&state.db, id, auth.member_id, &items).await? }))
+}
+
+/// Works for a member with no church: their own details, so they can pick a church with the form filled in.
+pub async fn my_profile(state: &SharedState, auth: &AuthUser) -> AppResult<Value> {
+    repo::my_profile(&state.db, auth.member_id).await?.ok_or_else(|| MemberError::NotFound.into())
+}
+
+/// Anonymises the account. Giving records stay (with the payer's name) because the church must keep its books.
+pub async fn delete_account(state: &SharedState, auth: &AuthUser, r: DeleteAccountRequest) -> AppResult<()> {
+    let reason = r.reason.trim();
+    if reason.chars().count() < 3 || reason.chars().count() > 500 {
+        return Err(AppError::Validation("Tell us why you are leaving (3 to 500 characters).".into()));
+    }
+    if auth.is_admin() {
+        return Err(AppError::Validation("Church administrators must hand over their role before deleting their account.".into()));
+    }
+    let Some(login) = repo::delete_account(&state.db, auth.member_id, reason).await? else {
+        return Err(MemberError::NotFound.into());
+    };
+    forget(state);
+    if let Some(user) = login {
+        match state.supabase.delete_user(user).await {
+            Ok(()) => { let _ = repo::login_removed(&state.db, auth.member_id).await; }
+            Err(e) => tracing::error!(error = ?e, member = %auth.member_id, "account anonymised but the login could not be removed"),
+        }
+    }
+    Ok(())
 }
 
 // ── reactions ──
@@ -277,7 +318,7 @@ pub async fn remove_family(state: &SharedState, auth: &AuthUser, related: Uuid) 
 /// Only people the church has accepted may use the member API.
 pub fn require_active(auth: &AuthUser) -> Result<(), AuthError> {
     match auth.member_status.as_deref() {
-        Some("approved" | "transfer_requested") => Ok(()),
+        Some("approved" | "transfer_requested") if auth.foc_id.is_some() => Ok(()),
         _ => Err(AuthError::Forbidden),
     }
 }
