@@ -28,3 +28,4 @@ pub mod payment;
 pub mod mobile;
 pub mod capacity;
 pub mod rbac;
+pub mod moderation;

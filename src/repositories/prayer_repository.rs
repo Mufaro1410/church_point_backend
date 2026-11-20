@@ -25,8 +25,9 @@ pub async fn list(
 ) -> Result<Vec<Value>, sqlx::Error> {
     sqlx::query_scalar(&format!(
         "SELECT {MASKED} FROM prayers p LEFT JOIN member_profiles m ON m.id = p.profile_id
-         WHERE p.foc_id = $2 AND p.date BETWEEN $3 AND $4
-         ORDER BY p.created_at DESC"
+         WHERE p.foc_id = $2 AND p.date BETWEEN $3 AND $4 {}
+         ORDER BY p.created_at DESC",
+        super::moderation_repository::hidden_sql("prayer", "p")
     ))
     .bind(me)
     .bind(foc_id)

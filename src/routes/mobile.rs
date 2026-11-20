@@ -10,7 +10,7 @@ use axum::{
 
 use crate::{
     errors::{AppError, AuthError},
-    handlers::{mobile as h, prayer, testimony},
+    handlers::{mobile as h, moderation, prayer, testimony},
     middleware::authentication::AuthUser,
     services::mobile_service::require_active,
     state::SharedState,
@@ -55,6 +55,10 @@ pub fn routes() -> Router<SharedState> {
         .route("/m/bible-progress/{plan_id}", get(h::get_progress).put(h::save_progress))
         .route("/m/family", get(h::my_family).post(h::add_family))
         .route("/m/family/{related_id}", delete(h::remove_family))
+        .route("/m/reports", post(moderation::report))
+        .route("/m/blocks", get(moderation::blocks).post(moderation::block))
+        .route("/m/blocks/{id}", delete(moderation::unblock))
+        .route("/m/terms/accept", post(moderation::accept_terms))
         .route("/m/members/search", get(h::search_members))
         .route_layer(from_fn(active_member));
 

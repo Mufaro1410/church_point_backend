@@ -21,6 +21,7 @@ pub const AREAS: &[Area] = &[
     Area { key: "sermons", label: "Sermons", group: "Church life", delete: true },
     Area { key: "prayers", label: "Prayer requests", group: "Church life", delete: true },
     Area { key: "testimonies", label: "Testimonies", group: "Church life", delete: true },
+    Area { key: "moderation", label: "Reported posts", group: "Church life", delete: false },
     Area { key: "dbr", label: "Bible reading plans", group: "Church life", delete: true },
     Area { key: "giving", label: "Giving (tithes, offerings, pledges)", group: "Finance", delete: false },
     Area { key: "expenses", label: "Expenses", group: "Finance", delete: false },

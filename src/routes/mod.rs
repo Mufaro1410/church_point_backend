@@ -24,6 +24,7 @@ pub mod payments;
 pub mod platform;
 pub mod prayers;
 pub mod rbac;
+pub mod moderation;
 pub mod sermons;
 pub mod testimonies;
 
@@ -49,6 +50,7 @@ pub fn build(state: SharedState) -> Router {
         .merge(catalog::routes())
         .merge(capacities::routes())
         .merge(rbac::routes())
+        .merge(moderation::routes())
         .merge(org::routes())
         .merge(platform::routes())
         .merge(prayers::routes())

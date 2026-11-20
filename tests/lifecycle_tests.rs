@@ -92,11 +92,8 @@ async fn deleting_an_account_wipes_the_person_but_keeps_the_books() {
     sqlx::query("INSERT INTO testimonies (profile_id, foc_id, title, situation, intervention, outcome, author) VALUES ($1,$2,'T','s','i','o','Mary Member')").bind(me).bind(uid(FOC_A1)).execute(&env.pool).await.unwrap();
     sqlx::query("INSERT INTO family_relationships (member_id, related_member_id, relationship_type) VALUES ($1,$2,'other')").bind(me).bind(uid(A1_ADMIN)).execute(&env.pool).await.unwrap();
 
-    // a reason is required, and admins must hand over first
-    assert_eq!(env.call(m, "POST", "/m/account/delete", Some(json!({"reason": " "}))).await.0, 422);
-    assert_eq!(env.call(&env.a1_admin, "POST", "/m/account/delete", Some(json!({"reason": "leaving"}))).await.0, 422);
-
-    let (st, r) = env.call(m, "POST", "/m/account/delete", Some(json!({"reason": "Moving abroad"}))).await;
+    // deleting never needs extra steps: the reason is optional
+    let (st, r) = env.call(m, "POST", "/m/account/delete", Some(json!({}))).await;
     assert_eq!(st, 200, "{r}");
 
     let (first, last, email, phone, foc, uid_col, deleted): (String, String, Option<String>, String, Option<Uuid>, Option<Uuid>, bool) = sqlx::query_as(
@@ -118,7 +115,7 @@ async fn deleting_an_account_wipes_the_person_but_keeps_the_books() {
     assert!(inc.to_string().contains("Mary Member"), "{inc}");
 
     let (reason, logged_in): (String, Option<Uuid>) = sqlx::query_as("SELECT reason, auth_user_id FROM account_deletions WHERE member_id = $1").bind(me).fetch_one(&env.pool).await.unwrap();
-    assert_eq!(reason, "Moving abroad");
+    assert_eq!(reason, "Not given");
     let _ = logged_in; // cleared only when the login was removed (no Supabase in this test)
     let why: Option<String> = sqlx::query_scalar("SELECT end_reason FROM membership_history WHERE member_id = $1").bind(me).fetch_one(&env.pool).await.unwrap();
     assert_eq!(why.as_deref(), Some("deleted"));

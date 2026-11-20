@@ -34,6 +34,7 @@ pub async fn create(state: &SharedState, auth: &AuthUser, r: CreatePrayerRequest
     let foc_id = auth.require_foc()?;
     let title = required_text("title", &r.title, MAX_TITLE)?;
     let content = required_text("content", &r.content, MAX_CONTENT)?;
+    crate::services::moderation_service::check_text(&[&title, &content])?;
     let date = r.date.unwrap_or_else(|| Utc::now().date_naive());
 
     // FIX: the author is the caller's MEMBER id. The React code sent the auth user id,
@@ -57,6 +58,7 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut r: Updat
     let foc_id = auth.require_foc()?;
     r.title = r.title.map(|v| required_text("title", &v, MAX_TITLE)).transpose()?;
     r.content = r.content.map(|v| required_text("content", &v, MAX_CONTENT)).transpose()?;
+    crate::services::moderation_service::check_text(&[r.title.as_deref().unwrap_or(""), r.content.as_deref().unwrap_or("")])?;
 
     match prayer_repository::update_own(&state.db, id, foc_id, auth.member_id, &r).await? {
         Some(id) => get(state, auth, id).await,

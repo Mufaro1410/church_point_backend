@@ -37,6 +37,7 @@ pub async fn create(state: &SharedState, auth: &AuthUser, r: CreateTestimonyRequ
     let situation = required_text("situation", &r.situation, MAX_SITUATION)?;
     let intervention = required_text("intervention", &r.intervention, MAX_INTERVENTION)?;
     let outcome = required_text("outcome", &r.outcome, MAX_OUTCOME)?;
+    crate::services::moderation_service::check_text(&[&title, &situation, &intervention, &outcome])?;
 
     // Author name and id come from the caller's identity, never from the request.
     let author = member_repository::full_name(&state.db, auth.member_id)
@@ -66,6 +67,7 @@ pub async fn update(state: &SharedState, auth: &AuthUser, id: Uuid, mut r: Updat
     r.situation = r.situation.map(|v| required_text("situation", &v, MAX_SITUATION)).transpose()?;
     r.intervention = r.intervention.map(|v| required_text("intervention", &v, MAX_INTERVENTION)).transpose()?;
     r.outcome = r.outcome.map(|v| required_text("outcome", &v, MAX_OUTCOME)).transpose()?;
+    crate::services::moderation_service::check_text(&[r.title.as_deref().unwrap_or(""), r.situation.as_deref().unwrap_or(""), r.intervention.as_deref().unwrap_or(""), r.outcome.as_deref().unwrap_or("")])?;
 
     match testimony_repository::update_own(&state.db, id, foc_id, auth.member_id, &r).await? {
         Some(id) => get(state, auth, id).await,

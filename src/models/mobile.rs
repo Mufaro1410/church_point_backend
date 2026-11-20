@@ -69,6 +69,7 @@ pub struct ServingItem {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteAccountRequest {
+    #[serde(default)]
     pub reason: String,
 }
 

@@ -23,8 +23,9 @@ pub async fn list(
 ) -> Result<Vec<Value>, sqlx::Error> {
     sqlx::query_scalar(&format!(
         "SELECT {MASKED} FROM testimonies t
-         WHERE t.foc_id = $2 AND ($3::text IS NULL OR t.status = $3)
-         ORDER BY t.created_at DESC LIMIT $4"
+         WHERE t.foc_id = $2 AND ($3::text IS NULL OR t.status = $3) {}
+         ORDER BY t.created_at DESC LIMIT $4",
+        super::moderation_repository::hidden_sql("testimony", "t")
     ))
     .bind(me)
     .bind(foc_id)

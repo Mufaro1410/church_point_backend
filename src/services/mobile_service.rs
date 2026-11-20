@@ -226,12 +226,14 @@ pub async fn my_profile(state: &SharedState, auth: &AuthUser) -> AppResult<Value
 /// Anonymises the account. Giving records stay (with the payer's name) because the church must keep its books.
 pub async fn delete_account(state: &SharedState, auth: &AuthUser, r: DeleteAccountRequest) -> AppResult<()> {
     let reason = r.reason.trim();
-    if reason.chars().count() < 3 || reason.chars().count() > 500 {
-        return Err(AppError::Validation("Tell us why you are leaving (3 to 500 characters).".into()));
+    // The reason is optional: deleting an account must never need extra steps.
+    if reason.chars().count() > 500 {
+        return Err(AppError::Validation("The reason is too long (max 500 characters).".into()));
     }
-    if auth.is_admin() {
-        return Err(AppError::Validation("Church administrators must hand over their role before deleting their account.".into()));
+    if auth.is_admin() && !repo::another_admin_exists(&state.db, auth.member_id).await? {
+        return Err(AppError::Validation("You are this church's only administrator. Make another member an administrator first, then delete your account.".into()));
     }
+    let reason = if reason.is_empty() { "Not given" } else { reason };
     let Some(login) = repo::delete_account(&state.db, auth.member_id, reason).await? else {
         return Err(MemberError::NotFound.into());
     };

@@ -13,3 +13,4 @@ pub mod testimony;
 pub mod payment;
 pub mod mobile;
 pub mod rbac;
+pub mod moderation;
