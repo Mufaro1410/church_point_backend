@@ -12,6 +12,7 @@ pub struct Area {
 
 pub const AREAS: &[Area] = &[
     Area { key: "members", label: "Members", group: "People", delete: true },
+    Area { key: "visitors", label: "Visitors & follow-up", group: "People", delete: true },
     Area { key: "cell_groups", label: "Cell groups & meetings", group: "People", delete: true },
     Area { key: "ministries", label: "Ministries", group: "People", delete: false },
     Area { key: "courses", label: "Courses", group: "People", delete: false },

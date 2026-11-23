@@ -20,6 +20,13 @@ pub struct BlockRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct AcceptTermsRequest {
+    /// Required for members under 13: the parent or guardian who agrees for them.
+    pub guardian_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ActionRequest {
     /// dismiss | remove | remove_and_eject
     pub action: String,

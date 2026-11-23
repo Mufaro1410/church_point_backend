@@ -6,7 +6,7 @@ use super::{ApiResponse, extract::{ApiJson, ApiPath}};
 use crate::{
     errors::AppResult,
     middleware::authentication::AuthUser,
-    models::moderation::{ActionRequest, BlockRequest, ReportRequest},
+    models::moderation::{AcceptTermsRequest, ActionRequest, BlockRequest, ReportRequest},
     services::moderation_service as svc,
     state::SharedState,
 };
@@ -28,7 +28,7 @@ pub async fn unblock(State(s): St, Extension(a): Me, ApiPath(id): ApiPath<Uuid>)
     svc::unblock(&s, &a, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
-pub async fn accept_terms(State(s): St, Extension(a): Me) -> Out<Value> { Ok(ok(svc::accept_terms(&s, &a).await?)) }
+pub async fn accept_terms(State(s): St, Extension(a): Me, ApiJson(b): ApiJson<AcceptTermsRequest>) -> Out<Value> { Ok(ok(svc::accept_terms(&s, &a, b).await?)) }
 
 pub async fn open_reports(State(s): St, Extension(a): Me) -> Out<Vec<Value>> { Ok(ok(svc::open_reports(&s, &a).await?)) }
 pub async fn open_count(State(s): St, Extension(a): Me) -> Out<Value> { Ok(ok(svc::open_count(&s, &a).await?)) }

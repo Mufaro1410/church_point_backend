@@ -85,11 +85,53 @@ async fn terms_are_recorded_once() {
     let Some(env) = setup().await else { return };
     let m = &env.a1_member;
     assert!(env.call(m, "GET", "/m/me", None).await.1["data"]["terms_accepted_at"].is_null());
-    assert_eq!(env.call(m, "POST", "/m/terms/accept", None).await.0, 200);
+    assert_eq!(env.call(m, "POST", "/m/terms/accept", Some(json!({}))).await.0, 200);
     let first = env.call(m, "GET", "/m/me", None).await.1["data"]["terms_accepted_at"].clone();
     assert!(first.is_string());
-    env.call(m, "POST", "/m/terms/accept", None).await;
+    env.call(m, "POST", "/m/terms/accept", Some(json!({}))).await;
     assert_eq!(env.call(m, "GET", "/m/me", None).await.1["data"]["terms_accepted_at"], first, "the first acceptance date stays");
     let _: Value = first;
+    env.cleanup().await;
+}
+
+#[tokio::test]
+async fn leaders_only_posts_stay_out_of_the_feed() {
+    let Some(env) = setup().await else { return };
+    let (a, m) = (&env.a1_admin, &env.a1_member);
+
+    // a leader's own leaders-only post: the member must not see it; the author and other leaders do
+    let (st, p) = env.call(a, "POST", "/m/prayers", Some(json!({"title": "Private", "content": "For the elders", "is_anonymous": true}))).await;
+    assert_eq!(st, 201, "{p}");
+    let pid = p["data"]["id"].as_str().unwrap().to_string();
+    assert!(prayer_ids(&env, a).await.contains(&pid));
+    assert!(prayer_ids(&env, &env.a1_admin2).await.contains(&pid));
+    assert!(!prayer_ids(&env, m).await.contains(&pid), "ordinary members never see leaders-only posts");
+
+    // a member's own leaders-only post is visible to them and to the leaders
+    let (_, q) = env.call(m, "POST", "/m/prayers", Some(json!({"title": "Quiet", "content": "Please keep private", "is_anonymous": true}))).await;
+    let qid = q["data"]["id"].as_str().unwrap().to_string();
+    assert!(prayer_ids(&env, m).await.contains(&qid));
+    assert!(prayer_ids(&env, a).await.contains(&qid));
+    env.cleanup().await;
+}
+
+#[tokio::test]
+async fn children_under_13_need_a_guardian_to_agree() {
+    let Some(env) = setup().await else { return };
+    let m = &env.a1_member;
+    sqlx::query("UPDATE member_profiles SET dob = current_date - interval '9 years' WHERE id = $1").bind(uid(A1_MEMBER)).execute(&env.pool).await.unwrap();
+    assert_eq!(env.call(m, "GET", "/m/me", None).await.1["data"]["needs_guardian"], true);
+    assert_eq!(env.call(m, "POST", "/m/terms/accept", Some(json!({}))).await.0, 422);
+    assert_eq!(env.call(m, "POST", "/m/terms/accept", Some(json!({"guardian_name": "A"}))).await.0, 422);
+    assert_eq!(env.call(m, "POST", "/m/terms/accept", Some(json!({"guardian_name": "Mrs Moyo"}))).await.0, 200);
+    let me = env.call(m, "GET", "/m/me", None).await.1;
+    assert_eq!((me["data"]["needs_guardian"].as_bool(), me["data"]["terms_accepted_at"].is_string()), (Some(false), true));
+    let name: Option<String> = sqlx::query_scalar("SELECT guardian_name FROM member_profiles WHERE id = $1").bind(uid(A1_MEMBER)).fetch_one(&env.pool).await.unwrap();
+    assert_eq!(name.as_deref(), Some("Mrs Moyo"));
+
+    // someone 13 or older is not asked for a guardian
+    sqlx::query("UPDATE member_profiles SET dob = current_date - interval '15 years', guardian_name = NULL, guardian_consent_at = NULL, terms_accepted_at = NULL WHERE id = $1").bind(uid(A1_MEMBER)).execute(&env.pool).await.unwrap();
+    assert_eq!(env.call(m, "GET", "/m/me", None).await.1["data"]["needs_guardian"], false);
+    assert_eq!(env.call(m, "POST", "/m/terms/accept", Some(json!({}))).await.0, 200);
     env.cleanup().await;
 }

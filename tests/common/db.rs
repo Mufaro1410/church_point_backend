@@ -296,6 +296,19 @@ impl Env {
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
     }
 
+    /// A request with no sign-in at all (the public pages).
+    pub async fn call_public(&self, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+        let mut req = Request::builder().method(method).uri(format!("/api/v1{uri}"));
+        let body = match body {
+            Some(b) => { req = req.header(header::CONTENT_TYPE, "application/json"); Body::from(b.to_string()) }
+            None => Body::empty(),
+        };
+        let res = self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let status = res.status();
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
     /// Like `call`, with extra request headers; also returns the response headers.
     pub async fn call_with(&self, who: &Actor, method: &str, uri: &str, headers: &[(&str, &str)], body: Option<Value>) -> (StatusCode, Value, axum::http::HeaderMap) {
         let mut req = Request::builder().method(method).uri(format!("/api/v1{uri}"))

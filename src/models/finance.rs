@@ -64,6 +64,7 @@ pub struct NewEntry {
     pub event_id: Option<Uuid>,
     pub supplier: Option<String>,
     pub ministry_id: Option<Uuid>,
+    pub pledge_id: Option<Uuid>,
 }
 
 /// Every change needs a reason; it is written to the audit trail.
@@ -160,6 +161,7 @@ pub struct ValidEntry {
     pub event_id: Option<Uuid>,
     pub supplier: Option<String>,
     pub ministry_id: Option<Uuid>,
+    pub pledge_id: Option<Uuid>,
 }
 
 #[derive(Default)]

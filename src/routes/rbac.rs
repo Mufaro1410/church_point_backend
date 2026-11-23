@@ -1,4 +1,4 @@
-use axum::{Router, middleware::from_fn, routing::{get, patch, put}};
+use axum::{Router, middleware::from_fn, routing::{get, patch}};
 
 use crate::{handlers::rbac as h, middleware::authorization::{ADMIN, require_roles}, state::SharedState};
 

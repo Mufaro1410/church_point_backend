@@ -4,15 +4,20 @@ use uuid::Uuid;
 
 type R<T> = Result<T, sqlx::Error>;
 
-/// SQL that hides posts a member should not see: from people they blocked, ones they reported,
-/// and ones several people have reported that no admin has looked at yet. `$1` is the viewer.
+/// SQL that hides posts a member should not see: leaders-only posts (unless they are the author or a leader),
+/// posts from people they blocked, ones they reported, and ones several people have reported that no admin has
+/// looked at yet. `$1` is the viewer.
 pub fn hidden_sql(kind: &str, alias: &str) -> String {
     format!(
-        "AND ({a}.profile_id IS NOT DISTINCT FROM $1 OR (
+        "AND (COALESCE({a}.is_anonymous, false) = false OR {a}.profile_id IS NOT DISTINCT FROM $1 OR EXISTS (
+                SELECT 1 FROM member_profiles v WHERE v.id = $1 AND (v.role::text IN ('admin', 'super_admin') OR EXISTS (
+                    SELECT 1 FROM member_church_roles mr JOIN church_roles cr ON cr.id = mr.role_id
+                    WHERE mr.member_id = v.id AND cr.permissions && ARRAY['{perm}.view', '{perm}.manage', '{perm}.delete']))))
+          AND ({a}.profile_id IS NOT DISTINCT FROM $1 OR (
             NOT EXISTS (SELECT 1 FROM member_blocks b WHERE b.blocker_id = $1 AND b.blocked_id = {a}.profile_id)
             AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.kind = '{k}' AND cr.content_id = {a}.id AND cr.reporter_id = $1)
             AND (SELECT count(*) FROM content_reports cr WHERE cr.kind = '{k}' AND cr.content_id = {a}.id AND cr.status = 'open') < 3))",
-        a = alias, k = kind
+        a = alias, k = kind, perm = if kind == "prayer" { "prayers" } else { "testimonies" }
     )
 }
 
@@ -53,8 +58,17 @@ pub async fn delete_block(pool: &PgPool, id: Uuid, me: Uuid) -> R<u64> {
     Ok(sqlx::query("DELETE FROM member_blocks WHERE id = $1 AND blocker_id = $2").bind(id).bind(me).execute(pool).await?.rows_affected())
 }
 
-pub async fn accept_terms(pool: &PgPool, me: Uuid) -> R<()> {
-    sqlx::query("UPDATE member_profiles SET terms_accepted_at = now() WHERE id = $1 AND terms_accepted_at IS NULL").bind(me).execute(pool).await?;
+pub async fn under_13(pool: &PgPool, me: Uuid) -> R<bool> {
+    sqlx::query_scalar("SELECT COALESCE(dob > current_date - interval '13 years', false) FROM member_profiles WHERE id = $1").bind(me).fetch_one(pool).await
+}
+
+pub async fn accept_terms(pool: &PgPool, me: Uuid, guardian: Option<&str>) -> R<()> {
+    sqlx::query(
+        "UPDATE member_profiles SET terms_accepted_at = COALESCE(terms_accepted_at, now()),
+                guardian_name = COALESCE($2, guardian_name),
+                guardian_consent_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE guardian_consent_at END
+         WHERE id = $1",
+    ).bind(me).bind(guardian).execute(pool).await?;
     Ok(())
 }
 

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     errors::{AppError, AppResult, PrayerError, TestimonyError},
     middleware::authentication::AuthUser,
-    models::moderation::{ActionRequest, BlockRequest, ReportRequest},
+    models::moderation::{AcceptTermsRequest, ActionRequest, BlockRequest, ReportRequest},
     repositories::moderation_repository as repo,
     state::SharedState,
 };
@@ -94,8 +94,15 @@ pub async fn unblock(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResul
     Ok(())
 }
 
-pub async fn accept_terms(state: &SharedState, auth: &AuthUser) -> AppResult<Value> {
-    repo::accept_terms(&state.db, auth.member_id).await?;
+pub async fn accept_terms(state: &SharedState, auth: &AuthUser, r: AcceptTermsRequest) -> AppResult<Value> {
+    let guardian = r.guardian_name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if guardian.is_some_and(|g| g.chars().count() > 120) {
+        return Err(AppError::Validation("The guardian's name is too long.".into()));
+    }
+    if repo::under_13(&state.db, auth.member_id).await? && guardian.map_or(true, |g| g.chars().count() < 2) {
+        return Err(AppError::Validation("A parent or guardian must agree for members under 13. Enter their full name.".into()));
+    }
+    repo::accept_terms(&state.db, auth.member_id, guardian).await?;
     Ok(json!({ "ok": true }))
 }
 

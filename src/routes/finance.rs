@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post, put},
 };
 
-use crate::{handlers::finance as h, middleware::authorization::require_perm, state::SharedState};
+use crate::{handlers::{finance as h, pledge, statement}, middleware::authorization::require_perm, state::SharedState};
 
 /// Money records are never deleted: they are voided with a reason (there is deliberately no DELETE route).
 pub fn routes() -> Router<SharedState> {
@@ -12,6 +12,10 @@ pub fn routes() -> Router<SharedState> {
         .route("/incomes", get(h::list_incomes).post(h::create_income))
         .route("/incomes/{id}", get(h::get_income).patch(h::update_income))
         .route("/incomes/{id}/void", post(h::void_income))
+        .route("/giving/statements", get(statement::summary))
+        .route("/giving/statements/{member_id}", get(statement::statement))
+        .route("/pledges", get(pledge::list).post(pledge::create))
+        .route("/pledges/{id}", get(pledge::get).patch(pledge::update))
         .route_layer(from_fn(|req, next| require_perm(&["giving"], req, next)));
     let expenses = Router::new()
         .route("/expenses", get(h::list_expenses).post(h::create_expense))

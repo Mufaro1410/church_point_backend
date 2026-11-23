@@ -74,10 +74,10 @@ pub async fn insert_entry(conn: &mut PgConnection, kind: Kind, foc: Uuid, by: Uu
         Kind::Income => {
             sqlx::query_scalar(
                 "INSERT INTO incomes (foc_id, member_id, event_id, category_id, amount, currency_id, method_id,
-                                      description, date, exchange_rate, recorded_by)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id")
+                                      description, date, exchange_rate, recorded_by, pledge_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
                 .bind(foc).bind(e.member_id).bind(e.event_id).bind(e.category_id).bind(e.amount)
-                .bind(e.currency_id).bind(e.method_id).bind(&e.description).bind(e.date).bind(e.rate).bind(by)
+                .bind(e.currency_id).bind(e.method_id).bind(&e.description).bind(e.date).bind(e.rate).bind(by).bind(e.pledge_id)
                 .fetch_one(conn).await
         }
         Kind::Expense => {

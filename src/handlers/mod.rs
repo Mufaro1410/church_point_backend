@@ -27,5 +27,9 @@ impl<T: Serialize> ApiResponse<T> {
 pub mod payment;
 pub mod mobile;
 pub mod capacity;
+pub mod pledge;
+pub mod report;
+pub mod statement;
+pub mod visitor;
 pub mod rbac;
 pub mod moderation;

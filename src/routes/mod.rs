@@ -14,6 +14,8 @@ pub mod announcements;
 pub mod auth;
 pub mod catalog;
 pub mod capacities;
+pub mod visitors;
+pub mod reports;
 pub mod events;
 pub mod finance;
 pub mod foc;
@@ -49,6 +51,8 @@ pub fn build(state: SharedState) -> Router {
         .merge(sermons::routes())
         .merge(catalog::routes())
         .merge(capacities::routes())
+        .merge(visitors::routes())
+        .merge(reports::routes())
         .merge(rbac::routes())
         .merge(moderation::routes())
         .merge(org::routes())
@@ -77,7 +81,7 @@ pub fn build(state: SharedState) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/ready", get(health::ready))
-        .nest("/api/v1", api.merge(token_only).merge(auth::public_routes()).merge(payments::public_routes()).merge(mobile::public_routes()))
+        .nest("/api/v1", api.merge(token_only).merge(auth::public_routes()).merge(payments::public_routes()).merge(mobile::public_routes()).merge(visitors::public_routes()))
         .with_state(state.clone())
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .merge(upload)

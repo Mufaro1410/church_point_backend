@@ -117,10 +117,16 @@ pub async fn create(state: &SharedState, auth: &AuthUser, kind: Kind, req: NewEn
     if let Some(m) = req.ministry_id {
         check_ministry(&mut tx, foc, m).await?;
     }
+    if let Some(p) = req.pledge_id {
+        if kind != Kind::Income { return Err(bad("pledge_id is only for income.")); }
+        if !crate::repositories::pledge_repository::accepts(&mut tx, foc, p, req.currency_id, req.category_id).await? {
+            return Err(bad("pledge_id must be an active pledge of this church in the same fund and currency."));
+        }
+    }
 
     let entry = ValidEntry {
         amount, currency_id: req.currency_id, category_id: req.category_id, method_id: req.method_id,
-        description, date, rate, member_id: req.member_id, event_id: req.event_id, supplier, ministry_id: req.ministry_id,
+        description, date, rate, member_id: req.member_id, event_id: req.event_id, supplier, ministry_id: req.ministry_id, pledge_id: req.pledge_id,
     };
     let id = repo::insert_entry(&mut tx, kind, foc, auth.member_id, &entry).await?;
     let after = repo::find_entry(&mut tx, kind, id, foc).await?.ok_or(FinanceError::EntryNotFound)?;
@@ -339,7 +345,7 @@ pub(crate) async fn record_online_income(
     check_method(conn, foc, method).await?;
     let entry = ValidEntry {
         amount, currency_id: currency, category_id: category, method_id: method, description: Some(description),
-        date: Utc::now().date_naive(), rate, member_id: Some(member), event_id: None, supplier: None, ministry_id: None,
+        date: Utc::now().date_naive(), rate, member_id: Some(member), event_id: None, supplier: None, ministry_id: None, pledge_id: None,
     };
     let id = repo::insert_entry(conn, Kind::Income, foc, member, &entry).await?;
     let after = repo::find_entry(conn, Kind::Income, id, foc).await?.ok_or(FinanceError::EntryNotFound)?;

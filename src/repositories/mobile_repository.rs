@@ -125,13 +125,12 @@ pub async fn my_profile(pool: &PgPool, me: Uuid) -> R<Option<Value>> {
     sqlx::query_scalar(
         "SELECT jsonb_build_object('id', m.id, 'first_name', m.first_name, 'last_name', m.last_name, 'gender', m.gender,
                 'email', m.email, 'phone', m.phone, 'address', m.address, 'dob', m.dob, 'profession', m.profession,
-                'marital_status', m.marital_status, 'status', m.status, 'foc_id', m.foc_id, 'has_church', m.foc_id IS NOT NULL, 'terms_accepted_at', m.terms_accepted_at)
+                'marital_status', m.marital_status, 'status', m.status, 'foc_id', m.foc_id, 'has_church', m.foc_id IS NOT NULL, 'terms_accepted_at', m.terms_accepted_at,
+                'needs_guardian', COALESCE(m.dob > current_date - interval '13 years', false) AND m.guardian_consent_at IS NULL)
          FROM member_profiles m WHERE m.id = $1 AND m.deleted_at IS NULL",
     ).bind(me).fetch_optional(pool).await
 }
 
-/// Anonymises the member in one transaction. Finance rows are untouched (they keep their payer snapshot).
-/// Returns the login id so the caller can remove it afterwards. None = nothing to delete.
 /// True if the member's church has another active administrator (or the member has no church).
 pub async fn another_admin_exists(pool: &PgPool, me: Uuid) -> R<bool> {
     sqlx::query_scalar(
@@ -141,6 +140,8 @@ pub async fn another_admin_exists(pool: &PgPool, me: Uuid) -> R<bool> {
     ).bind(me).fetch_one(pool).await
 }
 
+/// Anonymises the member in one transaction. Finance rows are untouched (they keep their payer snapshot).
+/// Returns the login id so the caller can remove it afterwards. None = nothing to delete.
 pub async fn delete_account(pool: &PgPool, me: Uuid, reason: &str) -> R<Option<Option<Uuid>>> {
     let mut tx = pool.begin().await?;
     let row: Option<(Option<Uuid>, Option<Uuid>, String)> = sqlx::query_as(
