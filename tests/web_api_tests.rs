@@ -259,8 +259,10 @@ async fn roles_profile_serving_list_and_tolerant_times() {
     assert_eq!(env.call(a1, "PUT", &format!("/members/{m}/role"), Some(json!({"role":"super_admin"}))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(env.call(a1, "PUT", &format!("/members/{}/role", a1.member_id), Some(json!({"role":"member"}))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(env.call(a2, "PUT", &format!("/members/{m}/role"), Some(json!({"role":"admin"}))).await.0, StatusCode::NOT_FOUND);
-    let (s, r) = env.call(a1, "PUT", &format!("/members/{m}/role"), Some(json!({"role":"cell_leader"}))).await;
-    assert_eq!((s, r["data"]["role"].as_str()), (StatusCode::OK, Some("cell_leader")));
+    // Only admin and member are built in; the old fixed cell_leader role is gone.
+    assert_eq!(env.call(a1, "PUT", &format!("/members/{m}/role"), Some(json!({"role":"cell_leader"}))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, r) = env.call(a1, "PUT", &format!("/members/{m}/role"), Some(json!({"role":"admin"}))).await;
+    assert_eq!((s, r["data"]["role"].as_str()), (StatusCode::OK, Some("admin")));
     let (_, nl) = env.call(a1, "POST", "/members", Some(json!({"first_name":"No","last_name":"Login","gender":"M","phone":"1"}))).await;
     assert_eq!(env.call(a1, "PUT", &format!("/members/{}/role", id(&nl)), Some(json!({"role":"admin"}))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
 

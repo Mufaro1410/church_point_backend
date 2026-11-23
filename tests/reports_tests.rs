@@ -71,3 +71,65 @@ async fn giving_report() {
     assert_eq!(d["by_category"].as_array().unwrap().len(), 2);
     assert!(d["spending"].is_array() && d["pledges"].is_array() && d["monthly"].is_array());
 }
+
+#[tokio::test]
+async fn members_report() {
+    let Some(env) = setup().await else { return };
+    let (st, r) = env.call(&env.a1_admin, "GET", "/reports/members?from=2026-01-01&to=2026-12-31", None).await;
+    assert_eq!(st.as_u16(), 200, "{r}");
+    let d = &r["data"];
+    assert_eq!(d["series"].as_array().unwrap().len(), 12);
+    assert!(d["composition"]["total"].as_i64().unwrap() >= 1);
+    assert!(d["composition"]["age_groups"].is_array() && d["newcomers"].is_array() && d["birthdays"].is_array());
+}
+
+#[tokio::test]
+async fn cells_and_visitors_reports() {
+    let Some(env) = setup().await else { return };
+    let a = &env.a1_admin;
+    let (st, r) = env.call(a, "POST", "/visitors", Some(json!({"full_name": "Report Guest", "phone": "0771111111"}))).await;
+    assert!(st.as_u16() < 300, "{r}");
+    let (_, g) = env.call(a, "POST", "/cell-groups", Some(json!({"name": "Report Cell"}))).await;
+    let gid = g["data"]["id"].as_str().unwrap().to_string();
+    let me = uid(A1_MEMBER).to_string();
+    let day = chrono::Utc::now().date_naive().to_string();
+    for att in [json!([{"profile_id": me, "present": true}, {"profile_id": uid(999).to_string(), "present": false}]), json!([me])] {
+        let (st, r) = env.call(a, "POST", &format!("/cell-groups/{gid}/meetings"), Some(json!({"date": day, "attendance": att, "offering": []}))).await;
+        assert!(st.as_u16() < 300, "{r}");
+    }
+    let (st, r) = env.call(a, "GET", "/reports/cells", None).await;
+    assert_eq!(st.as_u16(), 200, "{r}");
+    let row = r["data"]["cells"].as_array().unwrap().iter().find(|c| c["name"] == "Report Cell").unwrap();
+    assert_eq!(row["meetings"], 2);
+    assert_eq!(row["avg_present"].as_f64().unwrap(), 1.0);
+    assert!(r["data"]["cells"].is_array() && r["data"]["offerings"].is_array() && r["data"]["absentees"].is_array());
+    let (st, r) = env.call(a, "GET", "/reports/visitors", None).await;
+    assert_eq!(st.as_u16(), 200, "{r}");
+    assert!(r["data"]["funnel"]["total"].as_i64().unwrap() >= 1);
+    assert!(r["data"]["sources"].is_array() && r["data"]["waiting"].is_array());
+    let (st, _) = env.call(&env.a1_member, "GET", "/reports/visitors", None).await;
+    assert_eq!(st.as_u16(), 403);
+}
+
+#[tokio::test]
+async fn community_report() {
+    let Some(env) = setup().await else { return };
+    let a = &env.a1_admin;
+    let (st, r) = env.call(a, "GET", "/reports/community", None).await;
+    assert_eq!(st.as_u16(), 200, "{r}");
+    let d = &r["data"];
+    assert!(d["prayers"]["requests"].is_number() && d["testimonies"]["shared"].is_number() && d["sermons"]["preachers"].is_array());
+    assert!(d["participation"]["active_members"].as_i64().unwrap() >= 1);
+    assert!(d["moderation"]["open"].is_number());
+    let (st, _) = env.call(&env.a1_member, "GET", "/reports/community", None).await;
+    assert_eq!(st.as_u16(), 403);
+}
+
+#[tokio::test]
+async fn home_attention_counts() {
+    let Some(env) = setup().await else { return };
+    let (st, r) = env.call(&env.a1_admin, "GET", "/reports/attention", None).await;
+    assert_eq!(st.as_u16(), 200, "{r}");
+    let d = &r["data"];
+    assert!(d["visitors_waiting"].is_number() && d["stopped_attending"].is_number() && d["overdue_pledges"].is_number());
+}

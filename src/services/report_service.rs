@@ -73,3 +73,77 @@ pub async fn giving(state: &SharedState, auth: &AuthUser, from: Option<NaiveDate
         "spending_by_category": if spending { Some(repo::split(db, "expenses", "category", foc, p.from, p.to, p.pfrom).await?) } else { None },
     }))
 }
+
+pub async fn members(state: &SharedState, auth: &AuthUser, from: Option<NaiveDate>, to: Option<NaiveDate>) -> AppResult<Value> {
+    let foc = auth.require_foc()?;
+    let p = period(from, to)?;
+    let db = &state.db;
+    Ok(json!({
+        "period": head(&p),
+        "now": repo::members(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "series": repo::growth_series(db, foc, p.from, p.to).await?,
+        "composition": repo::composition(db, foc).await?,
+        "newcomers": repo::newcomers(db, foc, p.from, p.to).await?,
+        "birthdays": repo::birthdays(db, foc).await?,
+    }))
+}
+
+pub async fn cells(state: &SharedState, auth: &AuthUser, from: Option<NaiveDate>, to: Option<NaiveDate>) -> AppResult<Value> {
+    let foc = auth.require_foc()?;
+    let p = period(from, to)?;
+    let db = &state.db;
+    Ok(json!({
+        "period": head(&p),
+        "cells": repo::cells(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "offerings": repo::cell_offerings(db, foc, p.from, p.to).await?,
+        "absentees": repo::cell_absentees(db, foc, p.from, p.to).await?,
+        "not_in_cell": repo::members(db, foc, p.from, p.to, p.pfrom, p.pto).await?["not_in_cell"],
+    }))
+}
+
+pub async fn visitors(state: &SharedState, auth: &AuthUser, from: Option<NaiveDate>, to: Option<NaiveDate>) -> AppResult<Value> {
+    let foc = auth.require_foc()?;
+    if !auth.can("visitors.view") { return Err(crate::errors::domain::auth::AuthError::Forbidden.into()); }
+    let p = period(from, to)?;
+    let db = &state.db;
+    Ok(json!({
+        "period": head(&p),
+        "funnel": repo::visitor_funnel(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "sources": repo::visitor_sources(db, foc, p.from, p.to).await?,
+        "waiting": repo::visitors_waiting(db, foc).await?,
+        "followups": repo::visitor_followups(db, foc, p.from, p.to).await?,
+    }))
+}
+
+pub async fn community(state: &SharedState, auth: &AuthUser, from: Option<NaiveDate>, to: Option<NaiveDate>) -> AppResult<Value> {
+    let foc = auth.require_foc()?;
+    let p = period(from, to)?;
+    let db = &state.db;
+    Ok(json!({
+        "period": head(&p),
+        "prayers": repo::prayer_stats(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "unsupported": repo::unsupported_prayers(db, foc, p.from, p.to).await?,
+        "testimonies": repo::testimony_stats(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "sermons": repo::sermon_stats(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
+        "announcements": repo::announcement_stats(db, foc).await?,
+        "participation": repo::participation(db, foc, p.from, p.to).await?,
+        "moderation": if auth.can("moderation.view") { Some(repo::reports_summary(db, foc, p.from, p.to).await?) } else { None },
+    }))
+}
+
+/// Small counts for the Home page, each only when the caller may see the thing counted.
+pub async fn attention(state: &SharedState, auth: &AuthUser) -> AppResult<Value> {
+    let foc = auth.require_foc()?;
+    let db = &state.db;
+    let today = Utc::now().date_naive();
+    let visitors = if auth.can("visitors.view") { Some(repo::visitors_waiting(db, foc).await?.len()) } else { None };
+    let stopped = if auth.can("visitors.view") {
+        // Seen in the 4 weeks before the last 4 weeks, but not once in the last 4 weeks.
+        let (from, pto) = (today - Duration::days(27), today - Duration::days(28));
+        Some(repo::stopped(db, foc, from, today, pto - Duration::days(27), pto).await?.len())
+    } else { None };
+    let overdue = if auth.can("giving.view") {
+        Some(repo::pledges(db, foc).await?.iter().map(|r| r["overdue"].as_i64().unwrap_or(0)).sum::<i64>())
+    } else { None };
+    Ok(json!({ "visitors_waiting": visitors, "stopped_attending": stopped, "overdue_pledges": overdue }))
+}

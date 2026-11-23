@@ -18,3 +18,18 @@ pub async fn attendance(State(s): State<SharedState>, Extension(a): Extension<Au
 pub async fn giving(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, Query(q): Query<Period>) -> AppResult<Json<ApiResponse<Value>>> {
     Ok(Json(ApiResponse::ok(svc::giving(&s, &a, q.from, q.to).await?)))
 }
+pub async fn members(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, Query(q): Query<Period>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(svc::members(&s, &a, q.from, q.to).await?)))
+}
+pub async fn cells(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, Query(q): Query<Period>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(svc::cells(&s, &a, q.from, q.to).await?)))
+}
+pub async fn visitors(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, Query(q): Query<Period>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(svc::visitors(&s, &a, q.from, q.to).await?)))
+}
+pub async fn community(State(s): State<SharedState>, Extension(a): Extension<AuthUser>, Query(q): Query<Period>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(svc::community(&s, &a, q.from, q.to).await?)))
+}
+pub async fn attention(State(s): State<SharedState>, Extension(a): Extension<AuthUser>) -> AppResult<Json<ApiResponse<Value>>> {
+    Ok(Json(ApiResponse::ok(svc::attention(&s, &a).await?)))
+}

@@ -171,8 +171,8 @@ pub async fn delete(state: &SharedState, auth: &AuthUser, id: Uuid) -> AppResult
 
 pub async fn set_role(state: &SharedState, auth: &AuthUser, id: Uuid, role: &str) -> AppResult<Value> {
     let foc_id = auth.require_foc()?;
-    if !["member", "admin", "cell_leader"].contains(&role) {
-        return Err(AppError::Validation("role must be member, admin or cell_leader.".into()));
+    if !["member", "admin"].contains(&role) {
+        return Err(AppError::Validation("The built-in roles are member and admin. Other roles are created under Roles and given to people.".into()));
     }
     forbid_self(auth, id)?;
     get(state, auth, id).await?;
