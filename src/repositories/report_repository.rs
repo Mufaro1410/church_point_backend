@@ -11,7 +11,7 @@ type R<T> = Result<T, sqlx::Error>;
 fn stat(key: &str) -> String {
     format!("(CASE WHEN (e.manual_stats ->> '{key}') ~ '^[0-9]+$' THEN (e.manual_stats ->> '{key}')::int ELSE 0 END)")
 }
-/// How many people were counted in the room (the same sum the event page shows).
+/// How many people were counted in the room (males, females, children and youth).
 fn headcount() -> String {
     format!("({} + {} + {} + {})", stat("males"), stat("females"), stat("arena"), stat("children"))
 }
@@ -81,6 +81,21 @@ pub async fn services(pool: &PgPool, foc: Uuid, from: NaiveDate, to: NaiveDate) 
          FROM get_visible_events($1, $2, $3) e WHERE e.date <= current_date ORDER BY e.date, e.start_time",
         headcount(), stat("visitors"), stat("salvation")))
         .bind(foc).bind(from).bind(to).fetch_all(pool).await
+}
+
+/// Hand counts for the period and the one before it, one entry per count.
+pub async fn counter_totals(pool: &PgPool, foc: Uuid, from: NaiveDate, to: NaiveDate, pfrom: NaiveDate) -> R<Value> {
+    const COUNTS: [(&str, &str); 8] = [
+        ("males", "Males"), ("females", "Females"), ("children", "Children"), ("arena", "Youth (Arena)"),
+        ("visitors", "Visitors"), ("salvation", "Salvation"), ("alterCall", "Altar call"), ("reassurance", "Reassurance"),
+    ];
+    let items = COUNTS.iter().map(|(k, label)| format!(
+        "jsonb_build_object('key', '{k}', 'label', '{label}',
+            'total', coalesce(sum({s}) FILTER (WHERE e.date BETWEEN $2 AND $3), 0)::int,
+            'previous', coalesce(sum({s}) FILTER (WHERE e.date < $2), 0)::int)", s = stat(k))).collect::<Vec<_>>().join(", ");
+    sqlx::query_scalar(&format!(
+        "SELECT jsonb_build_array({items}) FROM get_visible_events($1, $4, $3) e WHERE e.date <= current_date"))
+        .bind(foc).bind(from).bind(to).bind(pfrom).fetch_one(pool).await
 }
 
 /// How often members were checked in, over services that had any check-ins at all.

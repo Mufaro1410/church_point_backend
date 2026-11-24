@@ -74,10 +74,10 @@ pub async fn insert_entry(conn: &mut PgConnection, kind: Kind, foc: Uuid, by: Uu
         Kind::Income => {
             sqlx::query_scalar(
                 "INSERT INTO incomes (foc_id, member_id, event_id, category_id, amount, currency_id, method_id,
-                                      description, date, exchange_rate, recorded_by, pledge_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
+                                      description, date, exchange_rate, recorded_by, pledge_id, payer_name)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id")
                 .bind(foc).bind(e.member_id).bind(e.event_id).bind(e.category_id).bind(e.amount)
-                .bind(e.currency_id).bind(e.method_id).bind(&e.description).bind(e.date).bind(e.rate).bind(by).bind(e.pledge_id)
+                .bind(e.currency_id).bind(e.method_id).bind(&e.description).bind(e.date).bind(e.rate).bind(by).bind(e.pledge_id).bind(&e.payer_name)
                 .fetch_one(conn).await
         }
         Kind::Expense => {
@@ -243,7 +243,7 @@ pub async fn setup(pool: &PgPool, foc: Uuid) -> Result<Value, sqlx::Error> {
         "SELECT jsonb_build_object(
            'base_currency', 'USD',
            'currencies', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'symbol', c.symbol,
-                'selected', fc.currency_id IS NOT NULL, 'rate', fc.rate::text) ORDER BY c.name), '[]'::jsonb)
+                'selected', fc.currency_id IS NOT NULL, 'rate', fc.rate::text, 'rate_updated_at', fc.rate_updated_at) ORDER BY c.name), '[]'::jsonb)
               FROM currencies c LEFT JOIN foc_currencies fc ON fc.currency_id = c.id AND fc.foc_id = $1),
            'categories', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'type', c.type,
                 'description', c.description, 'selected', fc.category_id IS NOT NULL) ORDER BY c.type, c.name), '[]'::jsonb)
@@ -259,8 +259,10 @@ pub async fn currency_name(pool: &PgPool, id: Uuid) -> Result<Option<String>, sq
 }
 
 pub async fn select_currency(pool: &PgPool, foc: Uuid, id: Uuid, rate: Option<Decimal>) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO foc_currencies (foc_id, currency_id, rate) VALUES ($1, $2, $3)
-                 ON CONFLICT (foc_id, currency_id) DO UPDATE SET rate = COALESCE(EXCLUDED.rate, foc_currencies.rate)")
+    sqlx::query("INSERT INTO foc_currencies (foc_id, currency_id, rate, rate_updated_at) VALUES ($1, $2, $3, CASE WHEN $3::numeric IS NOT NULL THEN now() END)
+                 ON CONFLICT (foc_id, currency_id) DO UPDATE SET rate = COALESCE(EXCLUDED.rate, foc_currencies.rate),
+                     rate_updated_at = CASE WHEN EXCLUDED.rate IS NOT NULL AND EXCLUDED.rate IS DISTINCT FROM foc_currencies.rate
+                                            THEN now() ELSE foc_currencies.rate_updated_at END")
         .bind(foc).bind(id).bind(rate).execute(pool).await?;
     Ok(())
 }

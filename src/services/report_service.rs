@@ -48,6 +48,7 @@ pub async fn attendance(state: &SharedState, auth: &AuthUser, from: Option<Naive
         "summary": repo::attendance_summary(db, foc, p.from, p.to).await?,
         "previous": repo::attendance_summary(db, foc, p.pfrom, p.pto).await?,
         "services": repo::services(db, foc, p.from, p.to).await?,
+        "counters": repo::counter_totals(db, foc, p.from, p.to, p.pfrom).await?,
         "regularity": repo::regularity(db, foc, p.from, p.to).await?,
         "stopped": repo::stopped(db, foc, p.from, p.to, p.pfrom, p.pto).await?,
     }))

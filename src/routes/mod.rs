@@ -54,6 +54,7 @@ pub fn build(state: SharedState) -> Router {
         .merge(visitors::routes())
         .merge(reports::routes())
         .merge(rbac::routes())
+        .merge(rbac::age_group_read_routes())
         .merge(moderation::routes())
         .merge(org::routes())
         .merge(platform::routes())

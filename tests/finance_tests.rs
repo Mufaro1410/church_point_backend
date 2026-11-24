@@ -52,6 +52,7 @@ async fn catalogue_setup_and_rates() {
 
     let (_, s) = env.call(a, "PUT", &format!("/finance/currencies/{}", ids.zwl), Some(json!({"selected":true,"rate":"20.5"}))).await;
     assert_eq!(entry(&s, "currencies", "ZWL")["rate"], "20.500000");
+    assert!(!entry(&s, "currencies", "ZWL")["rate_updated_at"].is_null(), "changing the rate stamps the date");
     let (_, s) = env.call(a, "PUT", &format!("/finance/currencies/{}", ids.zwl), Some(json!({"selected":false}))).await;
     assert_eq!(entry(&s, "currencies", "ZWL")["selected"], false);
     env.cleanup().await;
@@ -266,4 +267,23 @@ async fn migration_converts_float_amounts_and_merges_event_income() {
         ("150.00".to_string(), Some("1.000000".to_string()), Some(ev), true, event_cat, cash),
     ]);
     db.cleanup().await;
+}
+
+#[tokio::test]
+async fn income_from_someone_who_is_not_a_member_keeps_their_name() {
+    let Some(env) = setup().await else { return };
+    let ids = enable(&env).await;
+    let a = &env.a1_admin;
+    let mut body = income(&ids, json!(40), &ids.usd);
+    body["payer_name"] = json!("  Guest Speaker  ");
+    let (st, row) = env.call(a, "POST", "/incomes", Some(body)).await;
+    assert_eq!(st, StatusCode::CREATED);
+    assert_eq!(row["data"]["payer_name"], "Guest Speaker");
+    assert_eq!(row["data"]["member_name"], "Guest Speaker");
+    let mut body = income(&ids, json!(40), &ids.usd);
+    body["payer_name"] = json!("X");
+    body["member_id"] = json!(env.a1_admin.member_id);
+    let (st, _) = env.call(a, "POST", "/incomes", Some(body)).await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "a member or a name, not both");
+    env.cleanup().await;
 }

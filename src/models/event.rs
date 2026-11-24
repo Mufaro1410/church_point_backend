@@ -57,69 +57,44 @@ pub struct AttendanceSummary {
 
 // ── Strictly typed write requests (matches the real `events` table) ──
 
-/// `manual_stats` jsonb column. Keys match what the React app already stores.
+/// `manual_stats` jsonb column: the people counted by hand. The same fixed list for every church.
+/// `arena` is the youth count; the keys match what is already stored.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ManualStats {
-    #[serde(default)]
-    pub arena: i32,
-    #[serde(default)]
-    pub males: i32,
-    #[serde(default)]
-    pub females: i32,
-    #[serde(default)]
-    pub children: i32,
-    #[serde(default)]
-    pub visitors: i32,
-    #[serde(default, rename = "alterCall")]
-    pub alter_call: i32,
-    #[serde(default)]
-    pub salvation: i32,
-    #[serde(default)]
-    pub reassurance: i32,
+    #[serde(default)] pub arena: i32,
+    #[serde(default)] pub males: i32,
+    #[serde(default)] pub females: i32,
+    #[serde(default)] pub children: i32,
+    #[serde(default)] pub visitors: i32,
+    #[serde(default, rename = "alterCall")] pub alter_call: i32,
+    #[serde(default)] pub salvation: i32,
+    #[serde(default)] pub reassurance: i32,
 }
 
 impl ManualStats {
     pub fn is_valid(&self) -> bool {
-        [
-            self.arena, self.males, self.females, self.children,
-            self.visitors, self.alter_call, self.salvation, self.reassurance,
-        ]
-        .iter()
-        .all(|n| *n >= 0)
+        [self.arena, self.males, self.females, self.children, self.visitors, self.alter_call, self.salvation, self.reassurance]
+            .iter().all(|n| *n >= 0)
     }
 }
 
-/// Partial version used by PATCH: only the counters that are sent are changed, so two
-/// people updating different counters can't wipe each other's numbers.
+/// Partial version used by PATCH: only the counts that are sent are changed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ManualStatsPatch {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arena: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub males: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub females: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub children: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visitors: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "alterCall")]
-    pub alter_call: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub salvation: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reassurance: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub arena: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub males: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub females: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub children: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub visitors: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "alterCall")] pub alter_call: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub salvation: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub reassurance: Option<i32>,
 }
 
 impl ManualStatsPatch {
     pub fn is_valid(&self) -> bool {
-        [
-            self.arena, self.males, self.females, self.children,
-            self.visitors, self.alter_call, self.salvation, self.reassurance,
-        ]
-        .iter()
-        .flatten()
-        .all(|n| *n >= 0)
+        [self.arena, self.males, self.females, self.children, self.visitors, self.alter_call, self.salvation, self.reassurance]
+            .iter().flatten().all(|n| *n >= 0)
     }
 }
 

@@ -87,17 +87,21 @@ pub async fn create(state: &SharedState, auth: &AuthUser, kind: Kind, req: NewEn
     let amount = check_amount(req.amount)?;
     let description = optional_text("description", req.description, 500)?;
     let date = req.date.unwrap_or_else(|| Utc::now().date_naive());
+    let payer_name = optional_text("payer_name", req.payer_name.clone(), 120)?;
 
     let supplier = match kind {
         Kind::Income => {
             if req.supplier.is_some() || req.ministry_id.is_some() {
                 return Err(bad("supplier and ministry_id are only for expenses."));
             }
+            if req.member_id.is_some() && req.payer_name.as_deref().is_some_and(|n| !n.trim().is_empty()) {
+                return Err(bad("Give either member_id or payer_name, not both."));
+            }
             None
         }
         Kind::Expense => {
-            if req.member_id.is_some() || req.event_id.is_some() {
-                return Err(bad("member_id and event_id are only for income."));
+            if req.member_id.is_some() || req.event_id.is_some() || req.payer_name.is_some() {
+                return Err(bad("member_id, payer_name and event_id are only for income."));
             }
             Some(required_text("supplier", req.supplier.as_deref().unwrap_or(""), 150)?)
         }
@@ -126,7 +130,7 @@ pub async fn create(state: &SharedState, auth: &AuthUser, kind: Kind, req: NewEn
 
     let entry = ValidEntry {
         amount, currency_id: req.currency_id, category_id: req.category_id, method_id: req.method_id,
-        description, date, rate, member_id: req.member_id, event_id: req.event_id, supplier, ministry_id: req.ministry_id, pledge_id: req.pledge_id,
+        description, date, rate, member_id: req.member_id, event_id: req.event_id, supplier, ministry_id: req.ministry_id, pledge_id: req.pledge_id, payer_name,
     };
     let id = repo::insert_entry(&mut tx, kind, foc, auth.member_id, &entry).await?;
     let after = repo::find_entry(&mut tx, kind, id, foc).await?.ok_or(FinanceError::EntryNotFound)?;
@@ -345,7 +349,7 @@ pub(crate) async fn record_online_income(
     check_method(conn, foc, method).await?;
     let entry = ValidEntry {
         amount, currency_id: currency, category_id: category, method_id: method, description: Some(description),
-        date: Utc::now().date_naive(), rate, member_id: Some(member), event_id: None, supplier: None, ministry_id: None, pledge_id: None,
+        date: Utc::now().date_naive(), rate, member_id: Some(member), event_id: None, supplier: None, ministry_id: None, pledge_id: None, payer_name: None,
     };
     let id = repo::insert_entry(conn, Kind::Income, foc, member, &entry).await?;
     let after = repo::find_entry(conn, Kind::Income, id, foc).await?.ok_or(FinanceError::EntryNotFound)?;

@@ -50,7 +50,7 @@ pub fn de_amount_opt<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Decimal>,
     }
 }
 
-/// One shape for both sides. Income-only fields: member_id, event_id. Expense-only: supplier, ministry_id.
+/// One shape for both sides. Income-only fields: member_id (or payer_name for someone who is not a member), event_id. Expense-only: supplier, ministry_id.
 #[derive(Debug, Deserialize)]
 pub struct NewEntry {
     #[serde(deserialize_with = "de_amount")]
@@ -65,6 +65,8 @@ pub struct NewEntry {
     pub supplier: Option<String>,
     pub ministry_id: Option<Uuid>,
     pub pledge_id: Option<Uuid>,
+    /// Income only: who gave, when the giver is not a member (a visitor, a guest speaker, a company).
+    pub payer_name: Option<String>,
 }
 
 /// Every change needs a reason; it is written to the audit trail.
@@ -162,6 +164,7 @@ pub struct ValidEntry {
     pub supplier: Option<String>,
     pub ministry_id: Option<Uuid>,
     pub pledge_id: Option<Uuid>,
+    pub payer_name: Option<String>,
 }
 
 #[derive(Default)]

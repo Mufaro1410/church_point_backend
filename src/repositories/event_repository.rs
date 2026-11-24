@@ -124,7 +124,7 @@ pub async fn update(
         qb.push(", sermon_id = ").push_bind(*v);
     }
     if let Some(v) = &req.manual_stats {
-        // `||` merges keys: only the counters sent are overwritten.
+        // `||` merges keys: only the counts sent are overwritten.
         qb.push(", manual_stats = COALESCE(manual_stats, '{}'::jsonb) || ")
             .push_bind(serde_json::to_value(v).unwrap_or(Value::Null));
     }

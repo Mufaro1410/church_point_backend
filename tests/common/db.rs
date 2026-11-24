@@ -164,6 +164,9 @@ async fn build_one(url: &str, admin: &PgPool, name: &str, with_migrations: bool)
     su.close().await;
     app.close().await;
     // build under a temporary name and rename, so a crashed build never leaves a half-made template
+    // a pooled connection can outlive close(); end any session still on the half-built database, then rename
+    sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()")
+        .bind(&building).execute(admin).await.unwrap();
     sqlx::query(&format!("ALTER DATABASE {building} RENAME TO {name}")).execute(admin).await.unwrap();
 }
 
