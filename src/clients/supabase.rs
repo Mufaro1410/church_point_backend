@@ -110,9 +110,12 @@ impl SupabaseClient {
     }
 
     /// Creates the login. Whether an email confirmation is needed is decided by the Supabase project settings.
-    pub async fn sign_up(&self, email: &str, password: &str, meta: Value) -> AppResult<Value> {
-        let r = self.as_anon(self.req(Method::POST, "/auth/v1/signup")?)?
+    pub async fn sign_up(&self, email: &str, password: &str, meta: Value, redirect_to: Option<&str>) -> AppResult<Value> {
+        let mut r = self.as_anon(self.req(Method::POST, "/auth/v1/signup")?)?
             .json(&json!({ "email": email, "password": password, "data": meta }));
+        if let Some(url) = redirect_to {
+            r = r.query(&[("redirect_to", url)]);
+        }
         match self.send(r).await? {
             (200..=299, b) => Ok(b),
             (400..=429, b) => Err(AppError::Validation(message(&b))),

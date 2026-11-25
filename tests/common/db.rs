@@ -258,6 +258,7 @@ pub async fn setup_full(mock_supabase: Option<String>, paynow: Option<String>, p
         ffmpeg_bin: "ffmpeg".into(),
         payments_key: Some([7u8; 32]),
         password_reset_redirect: None,
+        email_confirm_redirect: None,
         public_base_url: Some("https://example.test".into()),
         paynow_base_url: paynow.unwrap_or_else(|| "https://www.paynow.co.zw".into()),
         expo_push_url: push.unwrap_or_else(|| "http://127.0.0.1:9/push".into()),

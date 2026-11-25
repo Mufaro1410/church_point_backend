@@ -22,4 +22,5 @@ pub fn public_routes() -> Router<SharedState> {
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/register", post(auth::register))
         .route("/auth/forgot-password", post(auth::forgot_password))
+        .route("/auth/reset-password", post(auth::reset_password))
 }

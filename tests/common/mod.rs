@@ -26,6 +26,7 @@ pub fn test_app() -> Router {
         ffmpeg_bin: "ffmpeg".into(),
         payments_key: Some([7u8; 32]),
         password_reset_redirect: None,
+        email_confirm_redirect: None,
         public_base_url: Some("https://example.test".into()),
         paynow_base_url: "https://www.paynow.co.zw".into(),
         expo_push_url: "http://127.0.0.1:9/push".into(),

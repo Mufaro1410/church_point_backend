@@ -106,7 +106,7 @@ pub async fn register_member(state: &SharedState, r: crate::models::mobile::Regi
         "first_name": r.first_name.trim(), "last_name": r.last_name.trim(),
         "display_name": format!("{} {}", r.first_name.trim(), r.last_name.trim()),
     });
-    let raw = state.supabase.sign_up(&e, &r.password, meta).await?;
+    let raw = state.supabase.sign_up(&e, &r.password, meta, state.settings.email_confirm_redirect.as_deref()).await?;
     let user = raw.get("user").unwrap_or(&raw);
     let id: Uuid = user["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| AppError::Upstream("Sign-up gave no user id.".into()))?;
     if user["identities"].as_array().is_some_and(|i| i.is_empty()) {
@@ -150,6 +150,15 @@ pub async fn change_password(state: &SharedState, access_token: &str, new_passwo
     state.supabase.update_password(access_token, new_password).await
 }
 
+/// Finishes a "reset password" email link: the page hands over the recovery token and the new password.
+pub async fn reset_password(state: &SharedState, access_token: &str, new_password: &str) -> AppResult<()> {
+    if access_token.trim().is_empty() {
+        return Err(AppError::Validation("This reset link is not valid. Ask for a new one.".into()));
+    }
+    password(new_password)?;
+    state.supabase.update_password(access_token, new_password).await
+}
+
 pub async fn logout(state: &SharedState, access_token: &str) -> AppResult<()> {
     state.supabase.logout(access_token).await
 }
@@ -182,7 +191,7 @@ pub async fn register(state: &SharedState, r: RegisterRequest) -> AppResult<Valu
         "last_name": cleaned.user_data.last_name,
         "display_name": format!("{} {}", cleaned.user_data.first_name, cleaned.user_data.last_name),
     });
-    let raw = state.supabase.sign_up(&e, &r.password, meta).await?;
+    let raw = state.supabase.sign_up(&e, &r.password, meta, state.settings.email_confirm_redirect.as_deref()).await?;
     // Supabase hides "already registered" by returning a user with no identities.
     let user = raw.get("user").unwrap_or(&raw);
     let id: Uuid = user["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| AppError::Upstream("Sign-up gave no user id.".into()))?;

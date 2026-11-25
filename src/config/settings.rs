@@ -35,6 +35,8 @@ pub struct Settings {
     pub app_timezone: String,
     /// Page the "reset password" email links to (optional; otherwise Supabase's own setting is used).
     pub password_reset_redirect: Option<String>,
+    /// Where the "confirm your email" link lands after sign-up (optional).
+    pub email_confirm_redirect: Option<String>,
 }
 
 impl Settings {
@@ -59,6 +61,7 @@ impl Settings {
             },
             public_base_url: env::var("PUBLIC_BASE_URL").ok().map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()),
             password_reset_redirect: env::var("PASSWORD_RESET_REDIRECT_URL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            email_confirm_redirect: env::var("EMAIL_CONFIRM_REDIRECT_URL").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
             paynow_base_url: env::var("PAYNOW_BASE_URL").unwrap_or_else(|_| "https://www.paynow.co.zw".into()),
             expo_push_url: env::var("EXPO_PUSH_URL").unwrap_or_else(|_| "https://exp.host/--/api/v2/push/send".into()),
             reminders_enabled: env::var("REMINDERS_ENABLED").map(|v| v != "false" && v != "0").unwrap_or(true),

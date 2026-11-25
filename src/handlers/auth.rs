@@ -89,3 +89,15 @@ pub async fn profile(State(s): State<SharedState>, Extension(a): Extension<AuthU
     let p = crate::repositories::user_repository::own_profile(&s.db, a.member_id).await?;
     Ok(Json(ApiResponse::ok(p.unwrap_or(serde_json::Value::Null))))
 }
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResetPassword {
+    pub access_token: String,
+    pub password: String,
+}
+
+pub async fn reset_password(State(s): State<SharedState>, ApiJson(b): ApiJson<ResetPassword>) -> AppResult<StatusCode> {
+    auth_service::reset_password(&s, &b.access_token, &b.password).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
