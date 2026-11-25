@@ -90,6 +90,15 @@ pub async fn profile(State(s): State<SharedState>, Extension(a): Extension<AuthU
     Ok(Json(ApiResponse::ok(p.unwrap_or(serde_json::Value::Null))))
 }
 
+pub async fn resend_confirmation(State(s): State<SharedState>, ApiJson(r): ApiJson<ForgotRequest>) -> AppResult<StatusCode> {
+    auth_service::resend_confirmation(&s, r).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn public_groups(State(s): State<SharedState>) -> AppResult<Json<ApiResponse<Vec<serde_json::Value>>>> {
+    Ok(Json(ApiResponse::ok(catalog_service::public_groups(&s).await?)))
+}
+
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResetPassword {

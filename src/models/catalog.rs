@@ -34,9 +34,19 @@ pub struct ChurchData {
     pub address: String,
     pub email: String,
     pub contact: String,
-    pub church_id: Uuid,
+    /// Optional: pick an existing church (denomination). Left empty, a new church is created from the name.
+    #[serde(default, deserialize_with = "blank_uuid_is_none")]
+    pub church_id: Option<Uuid>,
     pub country: Option<String>,
     pub logo: Option<String>,
+}
+
+fn blank_uuid_is_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Uuid>, D::Error> {
+    let v: Option<String> = Option::deserialize(d)?;
+    match v.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(s) => s.parse().map(Some).map_err(|_| serde::de::Error::custom("church_id must be a valid id")),
+    }
 }
 
 #[derive(Debug, Deserialize)]

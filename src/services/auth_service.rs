@@ -130,7 +130,7 @@ pub async fn register_member(state: &SharedState, r: crate::models::mobile::Regi
         if let Err(e) = outcome { tracing::error!(error = ?e, "member registration failed"); }
         return Err(err);
     }
-    Ok(json!({ "registered": true, "status": "pending" }))
+    Ok(json!({ "registered": true, "status": "pending", "verify_email": user["email_confirmed_at"].is_null() }))
 }
 
 pub async fn login(state: &SharedState, r: LoginRequest) -> AppResult<Value> {
@@ -143,6 +143,14 @@ pub async fn login(state: &SharedState, r: LoginRequest) -> AppResult<Value> {
 
 pub async fn refresh(state: &SharedState, r: RefreshRequest) -> AppResult<Value> {
     session_reply(state, state.supabase.refresh(&r.refresh_token).await?).await
+}
+
+/// Always succeeds from the caller's view.
+pub async fn resend_confirmation(state: &SharedState, r: ForgotRequest) -> AppResult<()> {
+    if let Ok(e) = email(&r.email) {
+        state.supabase.resend_confirmation(&e, state.settings.email_confirm_redirect.as_deref()).await?;
+    }
+    Ok(())
 }
 
 pub async fn change_password(state: &SharedState, access_token: &str, new_password: &str) -> AppResult<()> {
@@ -179,8 +187,10 @@ pub async fn register(state: &SharedState, r: RegisterRequest) -> AppResult<Valu
     let mut user_data = r.user_data;
     user_data.email = e.clone();
     let (cleaned, dob) = catalog_service::clean_register(RegisterFoc { church_data: r.church_data, user_data })?;
-    if !catalog_repository::church_exists(&state.db, cleaned.church_data.church_id).await? {
-        return Err(AppError::Validation("church_id does not match a church.".into()));
+    if let Some(id) = cleaned.church_data.church_id {
+        if !catalog_repository::church_exists(&state.db, id).await? {
+            return Err(AppError::Validation("church_id does not match a church.".into()));
+        }
     }
     if catalog_repository::email_taken(&state.db, &e).await? {
         return Err(OrgError::Duplicate("An account with this email").into());

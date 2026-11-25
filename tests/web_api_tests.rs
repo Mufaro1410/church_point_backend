@@ -232,7 +232,7 @@ async fn registering_a_foc_starts_pending() {
     newbie.token = common::db::token_for(other);
     assert_eq!(env.call(&newbie, "POST", "/auth/register-foc", Some(bad)).await.0, StatusCode::UNPROCESSABLE_ENTITY);
 
-    // the new admin exists but FOC data is locked until approved
+    // the admin profile is approved at once, but the church's data is locked until the church is approved
     newbie.token = common::db::token_for(new_user);
     let (s, me) = env.call(&newbie, "GET", "/auth/me", None).await;
     assert_eq!(s, StatusCode::OK);

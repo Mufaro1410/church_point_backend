@@ -213,6 +213,26 @@ pub async fn focs_in_church(pool: &PgPool, church_id: Uuid) -> Result<Vec<Value>
     .bind(church_id).fetch_all(pool).await
 }
 
+/// Groups (denominations) a new church may choose to belong to: those with provinces or more than one branch.
+/// Independent one-branch churches are not listed.
+pub async fn list_groups(pool: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT jsonb_build_object('id', c.id, 'name', c.name) FROM church c
+         WHERE EXISTS (SELECT 1 FROM province p WHERE p.church_id = c.id)
+            OR (SELECT count(*) FROM foc_profile f WHERE f.church_id = c.id) > 1
+         ORDER BY c.name ASC",
+    )
+    .fetch_all(pool).await
+}
+
+pub async fn province_in_church(pool: &PgPool, province: Uuid, church: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM province WHERE id = $1 AND church_id = $2)").bind(province).bind(church).fetch_one(pool).await
+}
+
+pub async fn set_province(pool: &PgPool, foc: Uuid, province: Option<Uuid>) -> Result<Option<Value>, sqlx::Error> {
+    sqlx::query_scalar("UPDATE foc_profile SET province_id = $2 WHERE id = $1 RETURNING to_jsonb(foc_profile)").bind(foc).bind(province).fetch_optional(pool).await
+}
+
 pub async fn church_exists(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM church WHERE id = $1)").bind(id).fetch_one(pool).await
 }
@@ -229,13 +249,17 @@ pub async fn register_foc(
     dob: Option<&str>,
 ) -> Result<Value, sqlx::Error> {
     let mut tx = pool.begin().await?;
+    let church_id: Uuid = match c.church_id {
+        Some(id) => id,
+        None => sqlx::query_scalar("INSERT INTO church(name) VALUES ($1) RETURNING id").bind(&c.name).fetch_one(&mut *tx).await?,
+    };
     let foc_id: Uuid = sqlx::query_scalar(
         "INSERT INTO foc_profile(name, address, email, contact, country, church_id, logo, status)
          VALUES ($1,$2,$3,$4,COALESCE($5,''),$6, COALESCE($7, $8), 'pending')
          RETURNING id",
     )
     .bind(&c.name).bind(&c.address).bind(&c.email).bind(&c.contact)
-    .bind(c.country.as_deref()).bind(c.church_id).bind(c.logo.as_deref().filter(|s| !s.trim().is_empty()))
+    .bind(c.country.as_deref()).bind(church_id).bind(c.logo.as_deref().filter(|s| !s.trim().is_empty()))
     .bind(DEFAULT_LOGO)
     .fetch_one(&mut *tx).await?;
     let profile_id: Uuid = sqlx::query_scalar(
@@ -246,7 +270,7 @@ pub async fn register_foc(
     .bind(u.address.as_deref().unwrap_or("")).bind(dob).bind(&u.gender).bind(foc_id)
     .fetch_one(&mut *tx).await?;
     tx.commit().await?;
-    Ok(serde_json::json!({ "foc_id": foc_id, "profile_id": profile_id, "church_id": c.church_id, "foc_status": "pending" }))
+    Ok(serde_json::json!({ "foc_id": foc_id, "profile_id": profile_id, "church_id": church_id, "foc_status": "pending" }))
 }
 
 // ── event services ──

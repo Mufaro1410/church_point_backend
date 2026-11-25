@@ -86,7 +86,22 @@ impl SupabaseClient {
             .json(&json!({ "email": email, "password": password }));
         match self.send(r).await? {
             (200, b) => Ok(b),
+            (400..=403, b) if b["error_code"] == "email_not_confirmed" || message(&b).to_lowercase().contains("email not confirmed") => {
+                Err(AuthError::EmailNotConfirmed.into())
+            }
             (400..=403, _) => Err(AuthError::InvalidCredentials.into()),
+            (s, b) => Err(Self::upstream(s, &b)),
+        }
+    }
+
+    /// Sends the sign-up confirmation email again. Never reveals whether the address has an account.
+    pub async fn resend_confirmation(&self, email: &str, redirect_to: Option<&str>) -> AppResult<()> {
+        let mut r = self.as_anon(self.req(Method::POST, "/auth/v1/resend")?)?.json(&json!({ "type": "signup", "email": email }));
+        if let Some(url) = redirect_to {
+            r = r.query(&[("redirect_to", url)]);
+        }
+        match self.send(r).await? {
+            (200..=299, _) | (400..=429, _) => Ok(()),
             (s, b) => Err(Self::upstream(s, &b)),
         }
     }

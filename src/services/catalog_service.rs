@@ -279,11 +279,39 @@ const FOC_FIELDS: &[(&str, Kind)] = &[
 
 pub async fn update_foc(state: &SharedState, auth: &AuthUser, body: Map<String, Value>) -> AppResult<Value> {
     let foc = auth.require_foc()?;
+    let mut body = body;
+    // A church may choose its own province (from its group's list). Its parent church is set by Church Point only.
+    let province = match body.remove("province_id") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(s)) if s.trim().is_empty() => Some(None),
+        Some(Value::String(s)) => {
+            let id: Uuid = s.parse().map_err(|_| AppError::Validation("province_id must be a valid id.".into()))?;
+            let church = auth.church_id.ok_or_else(|| AppError::Validation("Your church has no group, so it has no provinces.".into()))?;
+            if !repo::province_in_church(&state.db, id, church).await? {
+                return Err(AppError::Validation("That province does not belong to your church group.".into()));
+            }
+            Some(Some(id))
+        }
+        Some(_) => return Err(AppError::Validation("province_id must be a valid id.".into())),
+    };
+    body.remove("church_id");
     let vals = dynamic::parse(body, FOC_FIELDS)?;
-    if vals.is_empty() {
+    if vals.is_empty() && province.is_none() {
         return Err(AppError::Validation("Nothing to update.".into()));
     }
-    repo::update_row(&state.db, "foc_profile", foc, "id", foc, "", vals).await?.ok_or_else(|| crate::errors::FocError::NotFound.into())
+    let mut row = None;
+    if let Some(p) = province {
+        row = repo::set_province(&state.db, foc, p).await?;
+    }
+    if !vals.is_empty() {
+        row = repo::update_row(&state.db, "foc_profile", foc, "id", foc, "", vals).await?;
+    }
+    row.ok_or_else(|| crate::errors::FocError::NotFound.into())
+}
+
+pub async fn public_groups(state: &SharedState) -> AppResult<Vec<Value>> {
+    Ok(repo::list_groups(&state.db).await?)
 }
 
 pub fn clean_register(r: RegisterFoc) -> AppResult<(RegisterFoc, Option<String>)> {
@@ -321,8 +349,10 @@ pub async fn register_foc(state: &SharedState, user_id: Uuid, r: RegisterFoc) ->
 }
 
 pub async fn register_cleaned(state: &SharedState, user_id: Uuid, c: &RegisterFoc, dob: Option<&str>) -> AppResult<Value> {
-    if !repo::church_exists(&state.db, c.church_data.church_id).await? {
-        return Err(AppError::Validation("church_id does not match a church.".into()));
+    if let Some(id) = c.church_data.church_id {
+        if !repo::church_exists(&state.db, id).await? {
+            return Err(AppError::Validation("church_id does not match a church.".into()));
+        }
     }
     if repo::profile_exists_for_user(&state.db, user_id).await? {
         return Err(OrgError::Duplicate("A profile for this account").into());

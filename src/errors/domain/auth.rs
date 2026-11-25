@@ -10,6 +10,8 @@ pub enum AuthError {
     NoProfile,
     #[error("Invalid email or password.")]
     InvalidCredentials,
+    #[error("Please confirm your email first. Check your inbox for the confirmation link.")]
+    EmailNotConfirmed,
     #[error("Your profile is not assigned to a FOC.")]
     NoFoc,
     #[error("Your FOC is not approved yet or has been suspended.")]
@@ -25,6 +27,7 @@ impl AuthError {
             Self::InvalidToken => "INVALID_TOKEN",
             Self::NoProfile => "NO_PROFILE",
             Self::InvalidCredentials => "INVALID_CREDENTIALS",
+            Self::EmailNotConfirmed => "EMAIL_NOT_CONFIRMED",
             Self::NoFoc => "NO_FOC",
             Self::FocNotApproved => "FOC_NOT_APPROVED",
             Self::Forbidden => "FORBIDDEN",
@@ -33,7 +36,7 @@ impl AuthError {
     pub fn status(&self) -> StatusCode {
         match self {
             Self::MissingToken | Self::InvalidToken | Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
-            Self::NoProfile | Self::NoFoc | Self::FocNotApproved | Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::NoProfile | Self::EmailNotConfirmed | Self::NoFoc | Self::FocNotApproved | Self::Forbidden => StatusCode::FORBIDDEN,
         }
     }
 }
